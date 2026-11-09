@@ -47,6 +47,21 @@ export async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 
+/**
+ * 같은 사이트 안 경로만 돌려준다 (아니면 null).
+ * "//evil.com", "/\evil.com"(브라우저가 //로 바꿈), 탭·줄바꿈 섞기 등으로 외부 사이트로 보내는 것을 막는다.
+ */
+export function localPath(value) {
+  const s = String(value || '');
+  if (!s.startsWith('/') || s.startsWith('//') || s.includes('\\')) return null;
+  try {
+    const u = new URL(s, location.origin);
+    return u.origin === location.origin ? u.pathname + u.search + u.hash : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 엑셀에서 복사한 명단(탭/쉼표 구분)을 교육생 목록으로 바꾼다. 열: 이름, 소속, 연락처/이메일 (순서 자유) */
 export function parseMemberList(text) {
   const rows = String(text || '')

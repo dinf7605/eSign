@@ -383,6 +383,26 @@ function createApp({
     return next();
   });
 
+  // DNS 리바인딩 차단: 공격 사이트가 자기 도메인을 127.0.0.1로 바꿔 이 PC의 브라우저로 관리자 API(처음 비밀번호 설정 포함)를
+  // 부르는 것을 막는다. 관리자 API는 이 PC·LAN에서 쓰는 주소로 들어온 요청만 받는다.
+  //  - IP 주소(127.0.0.1, 192.168.x.x, [::1] 등)는 공격자가 DNS로 바꿀 수 없으므로 허용
+  //  - localhost, 이 PC 이름, 설정한 서명 링크 주소·터널 주소의 도메인 허용
+  const hostnameOf = (url) => { try { return new URL(url).hostname.toLowerCase(); } catch { return null; } };
+  function isTrustedHost(req) {
+    const m = /^(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(:\d{1,5})?$/.exec(String(req.headers.host || '').toLowerCase());
+    if (!m) return false;
+    const host = m[1].replace(/\.$/, '');
+    if (host.startsWith('[') || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return true;
+    if (host === 'localhost' || host.endsWith('.localhost')) return true;
+    const machine = os.hostname().toLowerCase();
+    if (host === machine || host === `${machine}.local`) return true;
+    return [publicUrl, tunnelUrl(), settings.publicUrl()].some((u) => u && hostnameOf(u) === host);
+  }
+  app.use(ADMIN_API, (req, res, next) => {
+    if (isTrustedHost(req)) return next();
+    return res.status(403).json({ error: '허용되지 않은 주소로 들어온 요청입니다. http://localhost 주소로 접속해 주세요.', code: 'bad_host' });
+  });
+
   app.use((req, res, next) => {
     res.set({
       'X-Content-Type-Options': 'nosniff',

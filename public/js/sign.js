@@ -1,14 +1,11 @@
-import { api, h, fmtDate, toast, placeBox, fmtDeadline } from './common.js';
+import { api, h, fmtDate, toast, placeBox, fmtDeadline, localPath } from './common.js';
 import { renderPdf } from './pdfview.js';
 import { SignaturePad } from './signature-pad.js';
 
 const params = new URLSearchParams(location.search);
 const token = params.get('t') || '';
 // "이 기기에서 서명받기"로 들어온 경우 돌아갈 화면 (같은 사이트 안 경로만 허용)
-const returnTo = (() => {
-  const r = params.get('return') || '';
-  return r.startsWith('/') && !r.startsWith('//') ? r : null;
-})();
+const returnTo = localPath(params.get('return'));
 const base = `/api/sign/${encodeURIComponent(token)}`;
 const $ = (id) => document.getElementById(id);
 

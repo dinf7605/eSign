@@ -1,9 +1,8 @@
-import { api, h, toast } from './common.js';
+import { api, h, toast, localPath } from './common.js';
 
 const box = document.getElementById('box');
-const nextParam = new URLSearchParams(location.search).get('next') || '/';
 // 같은 사이트 안의 경로로만 이동 (외부 주소로 보내는 것 방지)
-const next = nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/';
+const next = localPath(new URLSearchParams(location.search).get('next')) || '/';
 
 function form({ title, desc, confirm, button, onSubmit }) {
   const pw = h('input', { type: 'password', autocomplete: confirm ? 'new-password' : 'current-password', required: true, minlength: confirm ? 8 : null });
