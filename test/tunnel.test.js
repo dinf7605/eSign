@@ -114,6 +114,30 @@ test('처음 비밀번호 설정은 터널로 할 수 없다', async () => {
   });
 });
 
+test('대소문자·끝 점(.)을 바꾼 주소로도 터널 차단을 우회할 수 없다', async () => {
+  await withServer({ tunnel: UP }, async ({ call }) => {
+    // 비밀번호 설정 전: 인터넷에서 먼저 관리자 비밀번호를 정해 버리는 공격
+    for (const p of ['/API/auth/setup', '/Api/Auth/Setup']) {
+      const r = await call(p, { method: 'POST', body: { password: 'hacker-password' }, tunnel: true });
+      assert.equal(r.status, 403, p);
+      assert.equal(r.headers.get('set-cookie'), null, `${p} 로그인 쿠키 발급 금지`);
+    }
+    for (const p of ['/API/auth/status', '/API/documents', '/Api/Groups', '/API/SETTINGS', '/API/server-info', '/API/documents/x/original.pdf']) {
+      assert.equal((await call(p, { tunnel: true })).status, 403, p);
+    }
+    for (const p of ['/INDEX.HTML', '/Settings.html', '/NEW.html', '/settings.html.', '/login.html..']) {
+      const r = await call(p, { tunnel: true, redirect: 'manual' });
+      assert.equal(r.status, 302, p);
+    }
+    assert.equal((await call('/api/auth/setup', { method: 'POST', body: { password: 'owner-password' } })).status, 200, '이 PC에서는 여전히 가능');
+  });
+  await withServer({ adminPassword: 'tunnel-test-pw', tunnel: UP }, async ({ call }) => {
+    const r = await call('/API/auth/login', { method: 'POST', body: { password: 'tunnel-test-pw' }, tunnel: true });
+    assert.equal(r.status, 403, '맞는 비밀번호여도 인터넷에서는 로그인 불가');
+    assert.equal(r.headers.get('set-cookie'), null);
+  });
+});
+
 test('서명 링크는 터널 주소로 나가고, 터널로 열면 실제 접속자 IP가 기록된다', async () => {
   await withServer({ adminPassword: 'tunnel-test-pw', tunnel: UP }, async ({ call, login }) => {
     await login('tunnel-test-pw');

@@ -325,10 +325,13 @@ function createApp({
   const ADMIN_API = ['/api/auth', '/api/documents', '/api/groups', '/api/server-info', '/api/settings'];
   app.use((req, res, next) => {
     if (!req.viaTunnel) return next();
-    if (ADMIN_API.some((p) => req.path === p || req.path.startsWith(`${p}/`))) {
+    // Express 경로는 대소문자를 구분하지 않고(/API/documents == /api/documents),
+    // Windows 파일 시스템은 끝의 점을 무시한다(settings.html. == settings.html) → 같은 기준으로 맞춰서 비교
+    const p = req.path.toLowerCase().replace(/[.\s]+$/, '');
+    if (ADMIN_API.some((a) => p === a || p.startsWith(`${a}/`))) {
       return res.status(403).json({ error: '관리자 기능은 서버를 실행한 PC에서만 사용할 수 있습니다.', code: 'admin_local_only' });
     }
-    if (ADMIN_PAGES.has(req.path)) return res.redirect(302, '/verify.html');
+    if (ADMIN_PAGES.has(p) || p === '') return res.redirect(302, '/verify.html');
     return next();
   });
 
