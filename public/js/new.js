@@ -1,4 +1,4 @@
-import { api, h, COLORS, FIELD_TYPES, isInputType, toast, bytesToBase64, placeBox, hexToRgba, parseMemberList } from './common.js';
+import { api, h, COLORS, FIELD_TYPES, isInputType, toast, fmtDate, bytesToBase64, placeBox, hexToRgba, parseMemberList } from './common.js';
 import { renderPdf } from './pdfview.js';
 
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -65,12 +65,17 @@ async function loadFile(file) {
     return;
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
-  state.fileName = file.name;
+  if (!$('title').value) $('title').value = file.name.replace(/\.pdf$/i, '');
+  await openPdf(bytes, file.name, `선택한 파일: ${file.name} (${(file.size / 1024).toFixed(0)} KB) — 다른 파일을 고르면 서명란이 초기화됩니다.`);
+}
+
+/** PDF를 편집기에 연다. 칸은 비운다. 성공하면 true */
+async function openPdf(bytes, fileName, note) {
+  state.fileName = fileName;
   state.pdfBase64 = bytesToBase64(bytes);
   state.fields = [];
-  if (!$('title').value) $('title').value = file.name.replace(/\.pdf$/i, '');
   $('file-name').hidden = false;
-  $('file-name').textContent = `선택한 파일: ${file.name} (${(file.size / 1024).toFixed(0)} KB) — 다른 파일을 고르면 서명란이 초기화됩니다.`;
+  $('file-name').textContent = note;
   $('editor').hidden = false;
 
   try {
@@ -80,12 +85,123 @@ async function loadFile(file) {
     renderSigners();
     renderAll();
     $('editor').scrollIntoView({ behavior: 'smooth' });
+    return true;
   } catch (err) {
     console.error(err);
     $('pages').replaceChildren(h('div', { class: 'loading' }, 'PDF를 열 수 없습니다. 손상되었거나 암호가 걸린 파일인지 확인해 주세요.'));
     state.pdfBase64 = '';
+    return false;
   }
 }
+
+// ───── 템플릿: 불러오기 / 이름 바꾸기 / 지우기 / 저장 ─────
+async function loadTemplates() {
+  let list;
+  try {
+    list = await api('/api/templates');
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  $('templates').hidden = list.length === 0;
+  $('template-list').replaceChildren(...list.map((t) => h('div', { class: 'template-item' },
+    h('div', { class: 'grow', style: { minWidth: 0 } },
+      h('div', { class: 'template-name' }, t.name),
+      h('div', { class: 'small muted' }, [
+        t.mode === 'group' ? '교육생 일괄' : `한 문서에 ${t.signerCount}명`,
+        `${t.pageCount}쪽`,
+        `칸 ${t.fieldCount}개`,
+        t.inputLabels.length ? `체크·입력: ${t.inputLabels.slice(0, 3).join(', ')}${t.inputLabels.length > 3 ? ' …' : ''}` : null,
+        fmtDate(t.updatedAt || t.createdAt),
+      ].filter(Boolean).join(' · '))),
+    h('button', { type: 'button', class: 'btn btn-primary btn-sm', onclick: () => useTemplate(t.id) }, '불러오기'),
+    h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => renameTemplate(t) }, '이름 변경'),
+    h('button', { type: 'button', class: 'btn btn-ghost btn-sm btn-danger-text', onclick: () => deleteTemplate(t) }, '삭제'))));
+}
+
+async function useTemplate(id) {
+  if (state.pdfBase64 && !window.confirm('지금 편집 중인 문서와 칸 배치를 템플릿으로 바꿀까요?')) return;
+  try {
+    const t = await api(`/api/templates/${encodeURIComponent(id)}`);
+    const res = await fetch(`/api/templates/${encodeURIComponent(id)}/document.pdf`);
+    if (!res.ok) throw new Error('템플릿 문서를 불러오지 못했습니다.');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    setMode(t.mode);
+    if (t.mode === 'multi') {
+      state.signers = Array.from({ length: t.signerCount }, (_, i) => state.signers[i] || { name: '', email: '' });
+      state.activeSigner = 0;
+    }
+    $('title').value = t.name;
+    if (t.mode === 'group') {
+      $('info').value = t.info || '';
+      $('require-verification').checked = t.requireVerification;
+    }
+    const ok = await openPdf(bytes, t.fileName, `템플릿 "${t.name}" — ${t.fileName} · ${t.pageCount}쪽. 칸은 그대로 옮겨 놓았고, 필요하면 고칠 수 있습니다.`);
+    if (!ok) return;
+    state.fields = t.fields.map((f) => ({ ...f, signerIndex: f.signerIndex ?? 0 }));
+    renderSigners();
+    renderAll();
+    renderMembersPreview();
+    toast(t.mode === 'group' ? `템플릿을 불러왔습니다. 교육명을 고치고 명단을 넣어 주세요.` : '템플릿을 불러왔습니다. 서명자 이름을 넣어 주세요.');
+    (t.mode === 'group' ? $('members') : $('signers').querySelector('input'))?.focus({ preventScroll: true });
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function renameTemplate(t) {
+  const name = window.prompt('템플릿 이름', t.name);
+  if (name === null || name.trim() === t.name) return;
+  try {
+    await api(`/api/templates/${encodeURIComponent(t.id)}`, { method: 'POST', body: { name } });
+    toast('이름을 바꿨습니다.');
+    loadTemplates();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function deleteTemplate(t) {
+  if (!window.confirm(`템플릿 "${t.name}"을(를) 지울까요?\n이미 만든 서명 요청에는 영향이 없습니다.`)) return;
+  try {
+    await api(`/api/templates/${encodeURIComponent(t.id)}/delete`, { method: 'POST' });
+    toast('템플릿을 지웠습니다.');
+    loadTemplates();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+$('save-template').addEventListener('click', async () => {
+  if (!state.pdfBase64) return toast('PDF 파일을 먼저 올려 주세요.', 'error');
+  if (state.mode === 'group' && !state.fields.some((f) => f.type === 'signature')) return toast('문서 위에 "✍ 서명" 칸을 1개 이상 놓아 주세요.', 'error');
+  const name = window.prompt('템플릿 이름 (다음에 이 이름으로 불러옵니다)', $('title').value.trim() || state.fileName.replace(/\.pdf$/i, ''));
+  if (name === null) return undefined;
+  const btn = $('save-template');
+  btn.disabled = true;
+  try {
+    await api('/api/templates', {
+      method: 'POST',
+      body: {
+        name,
+        mode: state.mode,
+        fileName: state.fileName,
+        pdfBase64: state.pdfBase64,
+        signerCount: state.mode === 'multi' ? state.signers.length : 1,
+        info: state.mode === 'group' ? $('info').value.trim() : '',
+        requireVerification: $('require-verification').checked,
+        fields: state.mode === 'group' ? state.fields.map(({ signerIndex, ...f }) => f) : state.fields,
+      },
+    });
+    toast(`템플릿 "${name.trim()}"을(를) 저장했습니다. 다음부터 이 화면 위쪽에서 불러올 수 있습니다.`);
+    loadTemplates();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+  return undefined;
+});
 
 // ───── 2-A) 교육생 명단 ─────
 const phoneOk = (p) => String(p || '').replace(/\D/g, '').length >= 9;
@@ -354,3 +470,4 @@ $('submit').addEventListener('click', async () => {
 });
 
 setMode('group');
+loadTemplates();

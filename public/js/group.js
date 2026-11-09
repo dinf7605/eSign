@@ -38,7 +38,8 @@ function renderHead() {
       group.info ? h('p', { class: 'sub pre', style: { margin: '0 0 4px' } }, group.info) : null,
       h('p', { class: 'small muted', style: { margin: 0 } },
         `${group.fileName} · ${group.pageCount}쪽 · 만든 날 ${fmtDate(group.createdAt)} · `,
-        group.requireVerification ? '🔐 이름+전화번호 본인 확인 사용' : '본인 확인 없음 (링크만으로 서명)')),
+        group.requireVerification ? '🔐 이름+전화번호 본인 확인 사용' : '본인 확인 없음 (링크만으로 서명)'),
+      h('button', { type: 'button', class: 'btn btn-sm btn-ghost', style: { marginTop: '6px', paddingLeft: 0 }, onclick: saveAsTemplate, title: '다음 기수에 같은 문서·칸 배치를 다시 쓰려면' }, '💾 템플릿으로 저장')),
     params.has('created') ? h('div', { class: 'result info', style: { marginTop: 0, marginBottom: '16px' } },
       h('h3', {}, `교육생 ${total}명의 서명 요청이 만들어졌습니다 🎉`),
       h('div', { class: 'small' }, '아래 "메일 보내기"로 교육생마다 개인 서명 링크를 보내세요. 현장에서는 QR이나 "이 기기에서"로도 받을 수 있습니다.')) : null,
@@ -64,6 +65,18 @@ function renderHead() {
         h('p', { class: 'muted', style: { margin: '8px 0 0' } },
           '명단 엑셀에는 이름·소속·연락처·이메일·서명 일시·본인 확인 기록이 들어가고, 명단 PDF에는 서명 이미지가 함께 들어갑니다(연락처 일부 가림, 전자서명 포함).'))),
   ].filter(Boolean));
+}
+
+/** 이 요청의 문서와 칸 배치를 다음 기수에 다시 쓰도록 템플릿으로 저장 */
+async function saveAsTemplate() {
+  const name = window.prompt('템플릿 이름 (새 서명 요청 화면에서 이 이름으로 불러옵니다)', group.title);
+  if (name === null) return;
+  try {
+    const t = await api(`${base}/template`, { method: 'POST', body: { name } });
+    toast(`템플릿 "${t.name}"을(를) 저장했습니다. "새 서명 요청"에서 불러올 수 있습니다.`);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 const REACH_MSG = {

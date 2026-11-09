@@ -22,6 +22,7 @@ const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const MAX_SIGNATURE_BYTES = 1024 * 1024;
 const MAX_SIGNERS = 10;
 const MAX_FIELDS = 100;
+const MAX_TEMPLATES = 200;
 const MAX_MEMBERS_PER_REQUEST = 500;
 const MAX_MEMBERS_PER_GROUP = 1000;
 const FIELD_TYPES = ['signature', 'name', 'date', 'checkbox', 'text'];
@@ -359,7 +360,7 @@ function createApp({
 
   // 인터넷(터널)으로는 서명·문서 검증만 연다. 관리자 화면·API는 서버를 켠 PC(또는 같은 Wi-Fi)에서만.
   const ADMIN_PAGES = new Set(['/', '/index.html', '/new.html', '/group.html', '/doc.html', '/settings.html', '/login.html']);
-  const ADMIN_API = ['/api/auth', '/api/documents', '/api/groups', '/api/server-info', '/api/settings'];
+  const ADMIN_API = ['/api/auth', '/api/documents', '/api/groups', '/api/templates', '/api/server-info', '/api/settings'];
   app.use((req, res, next) => {
     if (!req.viaTunnel) return next();
     // Express 경로는 대소문자를 구분하지 않고(/API/documents == /api/documents),
@@ -402,7 +403,7 @@ function createApp({
   // ───────────── 로그인 ─────────────
   app.use('/api/auth', auth.router);
   // 아래 경로는 관리자만 (서명자 API·검증 API는 제외)
-  app.use(['/api/documents', '/api/groups', '/api/server-info', '/api/settings'], auth.requireAdmin);
+  app.use(['/api/documents', '/api/groups', '/api/templates', '/api/server-info', '/api/settings'], auth.requireAdmin);
 
   app.get('/api/server-info', (req, res) => {
     const base = baseUrl(req);
@@ -667,6 +668,114 @@ function createApp({
   }));
 
   app.get('/api/groups/:id', (req, res) => res.json(groupView(getGroup(req), baseUrl(req))));
+
+  // ───────────── 템플릿: 자주 쓰는 문서(PDF)와 칸 배치를 저장해 두고 다시 쓴다 ─────────────
+  // PDF는 템플릿마다 따로 저장하므로, 템플릿을 지워도 이미 만든 서명 요청에는 영향이 없다.
+
+  const getTemplate = (req) => store.findTemplate(req.params.id) || fail(404, '템플릿을 찾을 수 없습니다.');
+  const parseTemplateName = (v) => cleanText(v, { field: '템플릿 이름', max: 100 }).replace(/\s+/g, ' ');
+  const templateSummary = (t) => ({
+    id: t.id,
+    name: t.name,
+    mode: t.mode,
+    fileName: t.fileName,
+    pageCount: t.pageCount,
+    signerCount: t.signerCount,
+    fieldCount: t.fields.length,
+    inputLabels: t.fields.filter((f) => INPUT_TYPES.includes(typeOf(f))).map((f) => f.label),
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt || null,
+  });
+  const templateView = (t) => ({
+    ...templateSummary(t),
+    info: t.info || '',
+    requireVerification: t.requireVerification !== false,
+    fields: t.fields,
+  });
+
+  function saveTemplate({ name, mode, fileName, bytes, pageCount, fields, info, requireVerification, signerCount }) {
+    if (store.templates().length >= MAX_TEMPLATES) fail(400, `템플릿은 ${MAX_TEMPLATES}개까지 저장할 수 있습니다. 안 쓰는 템플릿을 지워 주세요.`);
+    const id = crypto.randomUUID();
+    const template = {
+      id, name, mode, fileName, pageCount, signerCount, info, requireVerification, fields,
+      file: `tpl-${id}.pdf`, hash: sha256(bytes), createdAt: now(),
+    };
+    fs.writeFileSync(store.filePath(template.file), bytes);
+    store.addTemplate(template);
+    return template;
+  }
+
+  app.get('/api/templates', (req, res) => {
+    res.json(store.templates().slice().reverse().map(templateSummary)); // 최근 것부터
+  });
+
+  app.post('/api/templates', wrap(async (req, res) => {
+    const body = req.body || {};
+    const name = parseTemplateName(body.name);
+    const mode = body.mode === 'multi' ? 'multi' : 'group';
+    const fileName = path.basename(cleanText(body.fileName, { field: '파일명', max: 200, required: false }) || 'document.pdf');
+    const { bytes, pageCount } = await parsePdf(body);
+    const signerCount = mode === 'multi' ? Number(body.signerCount) : 1;
+    if (!Number.isInteger(signerCount) || signerCount < 1 || signerCount > MAX_SIGNERS) fail(400, '서명자 수가 올바르지 않습니다.');
+    const fields = parseFields(body.fields, pageCount, signerCount);
+    for (let i = 0; i < signerCount; i += 1) {
+      if (!fields.some((f) => f.signerIndex === i && f.type === 'signature')) {
+        fail(400, signerCount === 1 ? '서명란(✍ 서명)을 1개 이상 배치해 주세요.' : `${i + 1}번 서명자의 서명란을 1개 이상 배치해 주세요.`);
+      }
+    }
+    const template = saveTemplate({
+      name,
+      mode,
+      fileName,
+      bytes,
+      pageCount,
+      signerCount,
+      fields: mode === 'group' ? fields.map(({ signerIndex, ...f }) => f) : fields,
+      info: mode === 'group' ? cleanText(body.info, { field: '교육 정보', max: 500, required: false }) : '',
+      requireVerification: body.requireVerification !== false,
+    });
+    res.status(201).json(templateView(template));
+  }));
+
+  /** 이미 만든 교육생 일괄 요청을 그대로 템플릿으로 저장 */
+  app.post('/api/groups/:id/template', (req, res) => {
+    const group = getGroup(req);
+    const bytes = fs.readFileSync(store.filePath(group.templateFile));
+    const template = saveTemplate({
+      name: parseTemplateName(req.body?.name ?? group.title),
+      mode: 'group',
+      fileName: group.fileName,
+      bytes,
+      pageCount: group.pageCount,
+      signerCount: 1,
+      fields: group.fields.map((f) => ({ ...f })),
+      info: group.info || '',
+      requireVerification: group.requireVerification !== false,
+    });
+    res.status(201).json(templateView(template));
+  });
+
+  app.get('/api/templates/:id', (req, res) => res.json(templateView(getTemplate(req))));
+
+  app.get('/api/templates/:id/document.pdf', (req, res) => {
+    const template = getTemplate(req);
+    sendPdf(res, store.filePath(template.file), template.fileName, false);
+  });
+
+  app.post('/api/templates/:id', (req, res) => {
+    const template = getTemplate(req);
+    template.name = parseTemplateName(req.body?.name);
+    template.updatedAt = now();
+    store.save();
+    res.json(templateView(template));
+  });
+
+  app.post('/api/templates/:id/delete', (req, res) => {
+    const template = getTemplate(req);
+    store.removeTemplate(template.id);
+    fs.rmSync(store.filePath(template.file), { force: true });
+    res.json({ ok: true });
+  });
 
   app.get('/api/groups/:id/template.pdf', (req, res) => {
     const group = getGroup(req);

@@ -342,3 +342,12 @@ td.mail-cell { max-width: 220px; }
   font-size: 11px; font-weight: 600; white-space: nowrap; color: #4c1d95; background: rgba(255, 255, 255, 0.9);
   padding: 1px 4px; border-radius: 3px; pointer-events: none; line-height: 1.3;
 }
+
+/* 템플릿 목록 (새 서명 요청 화면 위쪽) */
+.template-list { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
+.template-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fbfcfe; }
+.template-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) {
+  .template-item { flex-wrap: wrap; }
+  .template-item .grow { flex-basis: 100%; }
+}

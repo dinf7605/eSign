@@ -32,6 +32,12 @@
       </button>
     </div>
 
+    <section id="templates" class="card" hidden>
+      <h2 style="margin-bottom: 4px">저장한 템플릿으로 시작</h2>
+      <p class="small muted" style="margin: 0 0 12px">문서와 칸 배치를 불러옵니다. 불러온 뒤에도 칸을 고칠 수 있고, 명단만 새로 넣으면 됩니다.</p>
+      <div id="template-list" class="template-list"></div>
+    </section>
+
     <section id="upload" class="card">
       <label class="dropzone" id="drop">
         <input type="file" id="file" accept="application/pdf,.pdf">
@@ -83,6 +89,7 @@
           <div id="inputs" class="input-list"></div>
         </div>
         <button type="button" class="btn btn-primary btn-lg" id="submit" style="width: 100%">서명 요청 만들기</button>
+        <button type="button" class="btn" id="save-template" style="width: 100%; margin-top: 8px">💾 이 문서와 칸 배치를 템플릿으로 저장</button>
       </aside>
       <div class="pdf-pages" id="pages"></div>
     </section>
