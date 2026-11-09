@@ -1,4 +1,4 @@
-import { api, h, fmtDate, badge, toast } from './common.js';
+import { api, h, fmtDate, badge, toast, fmtDeadline, dDay } from './common.js';
 
 const progress = (done, total) => h('div', { class: 'progress-cell' },
   h('div', { class: 'progress' }, h('div', { style: { width: `${total ? (done / total) * 100 : 0}%` } })),
@@ -12,7 +12,8 @@ try {
   document.getElementById('groups').replaceChildren(...(groups.length === 0
     ? [h('tr', {}, h('td', { colspan: 3, class: 'empty' }, '아직 없습니다. ', h('a', { href: '/new.html' }, '교육생 서명 요청 만들기 →')))]
     : groups.map((g) => h('tr', { class: 'clickable', onclick: go(`/group.html?id=${encodeURIComponent(g.id)}`) },
-      h('td', {}, h('strong', {}, g.title)),
+      h('td', {}, h('strong', {}, g.title),
+        g.deadline ? h('div', { class: 'small', style: { color: g.expired ? 'var(--danger)' : '#b35c00' } }, `⏰ ${fmtDeadline(g.deadline)}까지 · ${dDay(g.deadline)}`) : null),
       h('td', {}, progress(g.signed, g.total)),
       h('td', { class: 'muted small hide-sm' }, fmtDate(g.createdAt))))));
 

@@ -351,3 +351,11 @@ td.mail-cell { max-width: 220px; }
   .template-item { flex-wrap: wrap; }
   .template-item .grow { flex-basis: 100%; }
 }
+
+/* 서명 기한 · 자동 다시 알림 */
+.badge-warn { background: #fff4e0; color: #b35c00; }
+.badge-bad { background: #fde8e8; color: var(--danger); }
+.deadline-input input[type=datetime-local] { width: auto; min-width: 210px; }
+.remind-choices { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-top: 10px; }
+.remind-choices label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.remind-choices.disabled { opacity: 0.45; }

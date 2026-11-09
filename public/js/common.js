@@ -148,3 +148,69 @@ export function hexToRgba(hex, alpha) {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
+
+// ───── 서명 기한 · 자동 다시 알림 ─────
+export const REMIND_CHOICES = [7, 5, 3, 2, 1];
+const pad2 = (n) => String(n).padStart(2, '0');
+/** ISO → <input type="datetime-local"> 값 (이 PC 시간대) */
+export function toLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+/** <input type="datetime-local"> 값 → ISO (비었으면 null) */
+export const fromLocalInput = (value) => (value ? new Date(value).toISOString() : null);
+/** 기한 표시: 11월 15일 (일) 오후 6:00 */
+export function fmtDeadline(iso) {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })} ${d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })}`;
+}
+/** D-3 (달력 날짜 기준) / 오늘 마감 · 5시간 남음 / 마감 */
+export function dDay(iso) {
+  const end = new Date(iso);
+  const ms = end.getTime() - Date.now();
+  if (ms <= 0) return '마감';
+  const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOf(end) - startOf(new Date())) / 86400000);
+  if (days === 0) return ms < 3600000 ? `오늘 마감 · ${Math.max(1, Math.round(ms / 60000))}분 남음` : `오늘 마감 · ${Math.round(ms / 3600000)}시간 남음`;
+  return `D-${days}`;
+}
+/**
+ * 기한 입력 묶음: 날짜·시각 + 빠른 선택(3일 뒤·1주 뒤 오후 6시) + 자동 다시 알림(기한 N일 전)
+ * @returns {{ el: HTMLElement, value: () => {deadline: string|null, autoRemind: number[]} }}
+ */
+export function deadlineInput({ deadline = null, autoRemind = [3, 1] } = {}) {
+  const input = h('input', { type: 'datetime-local', value: toLocalInput(deadline), min: toLocalInput(new Date().toISOString()) });
+  const boxes = REMIND_CHOICES.map((d) => h('input', { type: 'checkbox', value: String(d), checked: autoRemind.includes(d) }));
+  const remind = h('div', { class: 'remind-choices small' },
+    h('span', { class: 'muted' }, '자동 다시 알림: 기한'),
+    ...boxes.map((b) => h('label', {}, b, ` ${b.value}일 전`)));
+  const sync = () => {
+    const off = !input.value;
+    remind.classList.toggle('disabled', off);
+    for (const b of boxes) b.disabled = off;
+  };
+  const quick = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(18, 0, 0, 0);
+    input.value = toLocalInput(d.toISOString());
+    sync();
+  };
+  input.addEventListener('input', sync);
+  sync();
+  const el = h('div', { class: 'deadline-input' },
+    h('div', { class: 'row', style: { gap: '6px' } },
+      input,
+      h('button', { type: 'button', class: 'btn btn-sm', onclick: () => quick(3) }, '3일 뒤'),
+      h('button', { type: 'button', class: 'btn btn-sm', onclick: () => quick(7) }, '1주 뒤'),
+      h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onclick: () => { input.value = ''; sync(); } }, '없음')),
+    remind);
+  return {
+    el,
+    value: () => ({
+      deadline: fromLocalInput(input.value),
+      autoRemind: input.value ? boxes.filter((b) => b.checked).map((b) => Number(b.value)) : [],
+    }),
+  };
+}

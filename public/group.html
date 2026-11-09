@@ -69,6 +69,22 @@
     </div>
   </dialog>
 
+  <dialog id="deadline-dialog">
+    <form id="deadline-form">
+      <div class="dialog-body">
+        <h2>서명 기한 · 자동 다시 알림</h2>
+        <p class="small muted" style="margin-top: -6px">기한이 지나면 아직 서명하지 않은 교육생은 서명할 수 없습니다. 기한을 늘리면 다시 서명할 수 있어요.
+          자동 다시 알림은 요청 메일을 받고도 아직 서명하지 않은 교육생에게만, 정한 날짜마다 한 번씩 갑니다.</p>
+        <div id="deadline-box"></div>
+      </div>
+      <div class="dialog-foot">
+        <span class="grow"></span>
+        <button type="button" class="btn" id="deadline-cancel">취소</button>
+        <button type="submit" class="btn btn-primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="edit-dialog">
     <form id="edit-form">
       <div class="dialog-body">

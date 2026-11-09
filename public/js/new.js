@@ -1,4 +1,4 @@
-import { api, h, COLORS, FIELD_TYPES, isInputType, toast, fmtDate, bytesToBase64, placeBox, hexToRgba, parseMemberList } from './common.js';
+import { api, h, COLORS, FIELD_TYPES, isInputType, toast, fmtDate, bytesToBase64, placeBox, hexToRgba, parseMemberList, deadlineInput } from './common.js';
 import { renderPdf } from './pdfview.js';
 
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -18,6 +18,9 @@ const state = {
   activeSigner: 0,
   activeType: 'signature',
 };
+
+const deadline = deadlineInput();
+$('deadline-box').append(deadline.el);
 
 const nameOf = (i) => state.signers[i]?.name.trim() || `서명자 ${i + 1}`;
 const colorOf = (f) => (state.mode === 'group' ? FIELD_TYPES[f.type].color : COLORS[f.signerIndex % COLORS.length]);
@@ -416,6 +419,8 @@ function validate() {
     const noPhone = state.members.find((m) => !phoneOk(m.phone));
     if ($('require-verification').checked && noPhone) return `${noPhone.name} 님의 전화번호가 없습니다. 본인 확인에 필요해요. (본인 확인을 끄면 없어도 됩니다)`;
     if (!state.fields.some((f) => f.type === 'signature')) return '문서 위에 "✍ 서명" 칸을 1개 이상 놓아 주세요.';
+    const due = deadline.value().deadline;
+    if (due && new Date(due).getTime() <= Date.now()) return '서명 기한은 지금보다 뒤로 정해 주세요.';
     return null;
   }
   const blank = state.signers.findIndex((s) => !s.name.trim());
@@ -445,6 +450,7 @@ $('submit').addEventListener('click', async () => {
           ...common,
           info: $('info').value.trim(),
           requireVerification: $('require-verification').checked,
+          ...deadline.value(),
           members: state.members,
           fields: state.fields.map(({ signerIndex, ...f }) => f),
         },

@@ -1,4 +1,4 @@
-import { api, h, fmtDate, toast, placeBox } from './common.js';
+import { api, h, fmtDate, toast, placeBox, fmtDeadline } from './common.js';
 import { renderPdf } from './pdfview.js';
 import { SignaturePad } from './signature-pad.js';
 
@@ -101,6 +101,9 @@ async function proceed() {
       : null,
     inputFields().length
       ? h('p', { class: 'small muted', style: { margin: '6px 0 0' } }, '네모 칸은 눌러서 체크하고, 입력란에는 내용을 적어 주세요. 주황색 테두리는 필수 항목입니다.')
+      : null,
+    view.deadline
+      ? h('p', { class: 'small', style: { margin: '6px 0 0', color: '#b35c00', fontWeight: 700 } }, `⏰ 서명 기한: ${fmtDeadline(view.deadline)}까지`)
       : null));
 
   $('consent-text').textContent = view.consentText;

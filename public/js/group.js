@@ -1,4 +1,4 @@
-import { api, h, fmtDate, toast, copyText, parseMemberList } from './common.js';
+import { api, h, fmtDate, toast, copyText, parseMemberList, deadlineInput, fmtDeadline, dDay } from './common.js';
 
 const params = new URLSearchParams(location.search);
 const id = params.get('id') || '';
@@ -39,7 +39,11 @@ function renderHead() {
       h('p', { class: 'small muted', style: { margin: 0 } },
         `${group.fileName} · ${group.pageCount}쪽 · 만든 날 ${fmtDate(group.createdAt)} · `,
         group.requireVerification ? '🔐 이름+전화번호 본인 확인 사용' : '본인 확인 없음 (링크만으로 서명)'),
-      h('button', { type: 'button', class: 'btn btn-sm btn-ghost', style: { marginTop: '6px', paddingLeft: 0 }, onclick: saveAsTemplate, title: '다음 기수에 같은 문서·칸 배치를 다시 쓰려면' }, '💾 템플릿으로 저장')),
+      h('div', { class: 'row', style: { gap: '4px', marginTop: '6px' } },
+        deadlineBadge(),
+        h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onclick: openDeadline }, group.deadline ? '기한 변경' : '⏰ 서명 기한 정하기'),
+        h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onclick: saveAsTemplate, title: '다음 기수에 같은 문서·칸 배치를 다시 쓰려면' }, '💾 템플릿으로 저장'))),
+    deadlineNotice(),
     params.has('created') ? h('div', { class: 'result info', style: { marginTop: 0, marginBottom: '16px' } },
       h('h3', {}, `교육생 ${total}명의 서명 요청이 만들어졌습니다 🎉`),
       h('div', { class: 'small' }, '아래 "메일 보내기"로 교육생마다 개인 서명 링크를 보내세요. 현장에서는 QR이나 "이 기기에서"로도 받을 수 있습니다.')) : null,
@@ -66,6 +70,53 @@ function renderHead() {
           '명단 엑셀에는 이름·소속·연락처·이메일·서명 일시·본인 확인 기록이 들어가고, 명단 PDF에는 서명 이미지가 함께 들어갑니다(연락처 일부 가림, 전자서명 포함).'))),
   ].filter(Boolean));
 }
+
+// ───── 서명 기한 · 자동 다시 알림 ─────
+function deadlineBadge() {
+  if (!group.deadline) return null;
+  return h('span', { class: `badge ${group.expired ? 'badge-bad' : 'badge-warn'}`, title: '서명 기한' },
+    `⏰ ${fmtDeadline(group.deadline)}까지 · ${dDay(group.deadline)}`);
+}
+
+function deadlineNotice() {
+  if (!group.deadline) return null;
+  const unsigned = group.counts.total - group.counts.signed;
+  if (group.expired) {
+    return h('div', { class: 'result bad', style: { marginTop: 0, marginBottom: '16px' } },
+      h('b', {}, '서명 기한이 지났습니다. '),
+      unsigned ? `아직 서명하지 않은 ${unsigned}명은 서명할 수 없습니다. 더 받으려면 "기한 변경"으로 기한을 늘리세요.` : '모두 서명했습니다.');
+  }
+  const last = group.reminders[group.reminders.length - 1];
+  return h('div', { class: 'small muted', style: { margin: '-6px 0 14px' } }, [
+    group.autoRemind.length
+      ? `자동 다시 알림: 기한 ${group.autoRemind.join('·')}일 전${group.nextReminderAt ? ` (다음: ${fmtDate(group.nextReminderAt)})` : ' (남은 알림 없음)'}`
+      : '자동 다시 알림 없음',
+    last ? ` · 마지막 자동 알림 ${fmtDate(last.at)} ${last.count}명` : '',
+  ].join(''), group.reminderError ? h('div', { style: { color: 'var(--danger)' } }, `⚠ ${group.reminderError}`) : null);
+}
+
+let deadlineEditor = null;
+function openDeadline() {
+  deadlineEditor = deadlineInput({ deadline: group.expired ? null : group.deadline, autoRemind: group.autoRemind.length ? group.autoRemind : [3, 1] });
+  $('deadline-box').replaceChildren(deadlineEditor.el);
+  $('deadline-dialog').showModal();
+}
+$('deadline-cancel').addEventListener('click', () => $('deadline-dialog').close());
+$('deadline-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const value = deadlineEditor.value();
+  if (value.deadline && new Date(value.deadline).getTime() <= Date.now()) return toast('서명 기한은 지금보다 뒤로 정해 주세요.', 'error');
+  try {
+    group = await api(`${base}/deadline`, { method: 'POST', body: value });
+    $('deadline-dialog').close();
+    toast(value.deadline ? `서명 기한을 ${fmtDeadline(value.deadline)}까지로 정했습니다.` : '서명 기한을 없앴습니다.');
+    renderHead();
+    renderRows();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+  return undefined;
+});
 
 /** 이 요청의 문서와 칸 배치를 다음 기수에 다시 쓰도록 템플릿으로 저장 */
 async function saveAsTemplate() {

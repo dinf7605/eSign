@@ -14,7 +14,7 @@ const { createAuth, readCookie } = require('./lib/auth');
 const { buildRosterPdf, buildRosterXlsx } = require('./lib/roster');
 const { createZip, safeFileName } = require('./lib/zip');
 const { createSettings, MAIL_PRESETS } = require('./lib/settings');
-const { createMailer, friendlyMailError, signRequestMail, completedCopyMail } = require('./lib/mailer');
+const { createMailer, friendlyMailError, signRequestMail, completedCopyMail, formatDeadline } = require('./lib/mailer');
 const { normalizePhone } = require('./lib/phone');
 const { requestTimestamp, verifyTimestampToken } = require('./lib/tsa');
 
@@ -23,6 +23,9 @@ const MAX_SIGNATURE_BYTES = 1024 * 1024;
 const MAX_SIGNERS = 10;
 const MAX_FIELDS = 100;
 const MAX_TEMPLATES = 200;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_DEADLINE_MS = 366 * DAY_MS; // 기한은 1년 안쪽
+const REMIND_DAY_CHOICES = [1, 2, 3, 5, 7]; // "기한 N일 전" 자동 다시 알림
 const MAX_MEMBERS_PER_REQUEST = 500;
 const MAX_MEMBERS_PER_GROUP = 1000;
 const FIELD_TYPES = ['signature', 'name', 'date', 'checkbox', 'text'];
@@ -279,6 +282,7 @@ function signerView(doc, signer) {
     consentText: CONSENT_TEXT,
     verified: Boolean(signer.verifiedAt),
     signer: { name: signer.name, status: signer.status, signedAt: signer.signedAt || null },
+    deadline: doc.deadline || null,
     fields: doc.fields
       .filter((f) => f.signerId === signer.id)
       .map((f) => ({
@@ -326,6 +330,8 @@ function createApp({
   mailTransport,
   tsaUrl = process.env.ESIGN_TSA_URL,
   tunnel,
+  clock = () => Date.now(),
+  reminderIntervalMs = 60 * 1000,
 } = {}) {
   const store = createStore(dataDir);
   const seal = loadOrCreateSeal(path.join(dataDir, 'keys'));
@@ -334,6 +340,7 @@ function createApp({
   const mailer = createMailer({ getMailSettings: settings.mail, transport: mailTransport });
   const app = express();
   app.disable('x-powered-by');
+  const isPast = (iso) => Boolean(iso) && Date.parse(iso) <= clock();
 
   /** 봉인에 쓸 타임스탬프 설정 (없으면 undefined → 타임스탬프 없이 B-B) */
   const currentTsaUrl = () => tsaUrl || settings.tsaUrl();
@@ -342,12 +349,14 @@ function createApp({
   /** 서명 링크의 앞부분: 실행 옵션 > 인터넷 공개 터널 > 설정 화면 > LAN 모드 > 지금 접속한 주소 */
   const tunnelState = () => (tunnel ? tunnel() : null);
   const tunnelUrl = () => (!publicUrl && tunnelState()?.status === 'up' ? tunnelState().url : null);
-  const baseUrl = (req) => {
+  /** 요청과 상관없이 정해진 링크 주소 (없으면 null) — 자동 알림 메일에 쓴다 */
+  const configuredBase = () => {
     const fixed = publicUrl || tunnelUrl() || settings.publicUrl();
     if (fixed) return fixed.replace(/\/+$/, '');
     const ip = lan && lanAddresses()[0];
-    return ip ? `http://${ip}:${port}` : `${req.protocol}://${req.get('host')}`;
+    return ip ? `http://${ip}:${port}` : null;
   };
+  const baseUrl = (req) => configuredBase() || `${req.protocol}://${req.get('host')}`;
 
   // 터널(cloudflared)은 이 PC 안에서 서버로 접속하므로 원래 접속자 주소는 CF-Connecting-IP 헤더로 온다.
   // 이 헤더는 Cloudflare가 항상 덮어쓰므로 인터넷 쪽에서 위조할 수 없다.
@@ -593,6 +602,12 @@ function createApp({
         noEmail: members.filter((m) => !m.email).length,
       },
       link: { base, reach: reachability(base), temporary: Boolean(tunnelUrl()) && base === tunnelUrl(), tunnel: tunnelState() },
+      deadline: group.deadline || null,
+      expired: isPast(group.deadline),
+      autoRemind: group.autoRemind || [],
+      nextReminderAt: nextReminderAt(group),
+      reminders: group.reminders || [],
+      reminderError: group.reminderError || null,
     };
   }
 
@@ -615,7 +630,7 @@ function createApp({
       groupId: group.id,
       requireVerification: group.requireVerification !== false,
       req,
-    }));
+    })).map((doc) => Object.assign(doc, group.deadline ? { deadline: group.deadline } : {}));
   }
 
   app.get('/api/groups', (req, res) => {
@@ -630,6 +645,8 @@ function createApp({
           createdAt: g.createdAt,
           total: members.length,
           signed: members.filter((d) => d.signers[0].status === 'signed').length,
+          deadline: g.deadline || null,
+          expired: isPast(g.deadline),
         };
       }));
   });
@@ -640,6 +657,7 @@ function createApp({
     const info = cleanText(body.info, { field: '교육 정보', max: 500, required: false });
     const fileName = path.basename(cleanText(body.fileName, { field: '파일명', max: 200, required: false }) || 'document.pdf');
     const requireVerification = body.requireVerification !== false;
+    const { deadline, autoRemind } = parseDeadline(body);
     const { bytes, pageCount } = await parsePdf(body);
     const fields = parseFields(body.fields, pageCount, 1).map(({ signerIndex, ...f }) => f);
     if (!fields.some((f) => f.type === 'signature')) fail(400, '서명란(✍ 서명)을 1개 이상 배치해 주세요.');
@@ -658,6 +676,9 @@ function createApp({
       templateHash: sha256(bytes),
       fields,
       memberDocIds: [],
+      deadline,
+      deadlineSetAt: new Date(clock()).toISOString(),
+      autoRemind,
     };
     const docs = createMemberDocs(group, people, req);
     fs.writeFileSync(store.filePath(group.templateFile), bytes);
@@ -837,6 +858,7 @@ function createApp({
           link: `${base}/sign.html?t=${s.token}`,
           reminder,
           verification: doc.requireVerification,
+          deadline: group.deadline || null,
         });
         try {
           await batch.send({ to: { name: s.name, address: s.email }, ...mail });
@@ -881,6 +903,83 @@ function createApp({
     runSendJob(group, docs, base, job).catch((err) => console.error('[mail] 발송 작업 오류', err));
     res.status(202).json({ queued: docs.length });
   });
+
+  // ── 서명 기한 · 자동 다시 알림 ──
+
+  /** 기한 입력 검사: { deadline: ISO 또는 null, autoRemind: [기한 N일 전, ...] } */
+  function parseDeadline(body) {
+    const raw = body?.deadline;
+    if (raw === undefined || raw === null || raw === '') return { deadline: null, autoRemind: [] };
+    const t = typeof raw === 'string' ? Date.parse(raw) : NaN;
+    if (!Number.isFinite(t)) fail(400, '서명 기한 날짜 형식이 올바르지 않습니다.');
+    if (t <= clock()) fail(400, '서명 기한은 지금보다 뒤여야 합니다.');
+    if (t - clock() > MAX_DEADLINE_MS) fail(400, '서명 기한은 1년 안쪽으로 정해 주세요.');
+    const list = body.autoRemind === undefined ? [] : body.autoRemind;
+    if (!Array.isArray(list) || list.length > REMIND_DAY_CHOICES.length || !list.every((d) => REMIND_DAY_CHOICES.includes(d))) {
+      fail(400, `자동 알림은 기한 ${REMIND_DAY_CHOICES.join('·')}일 전 중에서 고를 수 있습니다.`);
+    }
+    return { deadline: new Date(t).toISOString(), autoRemind: [...new Set(list)].sort((a, b) => b - a) };
+  }
+
+  /** 기한 N일 전 알림 시각들 (아직 안 보낸 것만, 이른 순) */
+  function pendingReminders(group) {
+    if (!group.deadline || !group.autoRemind?.length) return [];
+    const end = Date.parse(group.deadline);
+    const setAt = Date.parse(group.deadlineSetAt || group.createdAt);
+    const done = group.remindersDone || {};
+    return group.autoRemind
+      .map((days) => ({ days, at: end - days * DAY_MS, key: `${group.deadline}|${days}` }))
+      .filter((r) => !done[r.key] && r.at >= setAt) // 기한을 정할 때 이미 지난 알림 시각은 건너뜀
+      .sort((a, b) => a.at - b.at);
+  }
+  const nextReminderAt = (group) => {
+    if (isPast(group.deadline)) return null;
+    const next = pendingReminders(group)[0];
+    return next ? new Date(Math.max(next.at, clock())).toISOString() : null;
+  };
+
+  app.post('/api/groups/:id/deadline', (req, res) => {
+    const group = getGroup(req);
+    const { deadline, autoRemind } = parseDeadline(req.body);
+    Object.assign(group, { deadline, autoRemind, deadlineSetAt: new Date(clock()).toISOString(), reminderError: null });
+    for (const doc of activeMembers(group)) {
+      if (deadline) doc.deadline = deadline;
+      else delete doc.deadline;
+    }
+    store.save();
+    res.json(groupView(group, baseUrl(req)));
+  });
+
+  /**
+   * 자동 다시 알림: 기한 N일 전이 되면, 요청 메일을 이미 받았지만 아직 서명하지 않은 교육생에게 다시 보낸다.
+   * 서버가 꺼져 있다가 늦게 켜져도 기한 전이면 한 번만 보낸다.
+   */
+  function runReminders() {
+    const jobs = [];
+    for (const group of store.groups()) {
+      if (!group.deadline || isPast(group.deadline)) continue;
+      const due = pendingReminders(group).filter((r) => r.at <= clock());
+      if (due.length === 0 || sendJobs.get(group.id)?.running) continue;
+      const base = configuredBase();
+      if (!mailer.configured() || !base || reachability(base) === 'local') {
+        group.reminderError = !mailer.configured() ? '메일 계정이 없어 자동 알림을 보내지 못했습니다.' : '서명 링크 주소가 이 PC 전용이라 자동 알림을 보내지 못했습니다.';
+        continue;
+      }
+      group.remindersDone ||= {};
+      for (const r of due) group.remindersDone[r.key] = new Date(clock()).toISOString(); // 밀린 알림이 여러 개여도 한 번만 보낸다
+      const docs = activeMembers(group).filter((d) => d.signers[0].status !== 'signed' && d.signers[0].email && d.signers[0].emailStatus === 'sent');
+      group.reminderError = null;
+      (group.reminders ||= []).push({ at: new Date(clock()).toISOString(), days: due[due.length - 1].days, count: docs.length });
+      store.save();
+      if (docs.length === 0) continue;
+      const job = { running: true, total: docs.length, done: 0, sent: 0, failed: 0, startedAt: now(), auto: true };
+      sendJobs.set(group.id, job);
+      jobs.push(runSendJob(group, docs, base, job).catch((err) => console.error('[mail] 자동 알림 오류', err)));
+    }
+    return Promise.all(jobs);
+  }
+  app.runReminders = runReminders; // 테스트용
+  if (reminderIntervalMs > 0) setInterval(runReminders, reminderIntervalMs).unref();
 
   // ── 서명자 명단 / 현황 내보내기 ──
 
@@ -960,6 +1059,9 @@ function createApp({
   const findSigner = (req) => {
     const found = store.findBySignerToken(req.params.token) || fail(404, '유효하지 않은 서명 링크입니다.');
     if (found.doc.status === 'cancelled') fail(410, '취소된 서명 요청입니다. 담당자에게 문의해 주세요.');
+    if (found.signer.status !== 'signed' && isPast(found.doc.deadline)) {
+      fail(410, `서명 기한(${formatDeadline(found.doc.deadline)})이 지났습니다. 담당자에게 문의해 주세요.`, 'expired');
+    }
     return found;
   };
   /** 본인 확인이 필요한 문서면 확인을 마친 경우에만 통과 */
