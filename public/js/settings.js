@@ -35,6 +35,7 @@ function renderMail() {
   $('pass').placeholder = m.hasPassword ? '저장됨 — 바꿀 때만 입력' : '';
   $('fromName').value = m.fromName || '';
   $('fromEmail').value = m.fromEmail || '';
+  $('send-completed-copy').checked = data.sendCompletedCopy !== false;
   if (!m.host) applyPreset();
   updatePresetHelp();
   $('mail-status').replaceChildren(m.host
@@ -95,6 +96,7 @@ $('mail-form').addEventListener('submit', async (e) => {
           fromName: $('fromName').value.trim(),
           fromEmail: $('fromEmail').value.trim(),
         },
+        sendCompletedCopy: $('send-completed-copy').checked,
       },
     });
     data = { ...data, ...r };

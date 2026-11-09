@@ -69,12 +69,18 @@
         <div class="card">
           <h2>2. 서명란 배치</h2>
           <p class="small muted" style="margin-top: -6px">종류를 고른 뒤 <b>문서 위를 클릭</b>하세요. 드래그로 옮기고, 오른쪽 아래 모서리로 크기를 바꿉니다.
-            <b>이름·날짜</b>는 서명할 때 자동으로 채워집니다.</p>
+            <b>이름·날짜</b>는 서명할 때 자동으로 채워지고, <b>체크·입력란</b>은 교육생이 직접 체크하거나 적습니다(예: 필수/선택 동의, 차량번호).</p>
           <div class="chips" id="types"></div>
           <div data-only="multi" style="margin-top: 12px">
             <div class="small muted" style="margin-bottom: 6px">누구의 칸인가요?</div>
             <div class="chips" id="chips"></div>
           </div>
+        </div>
+        <div class="card" id="inputs-card" hidden>
+          <h2>체크·입력 항목</h2>
+          <p class="small muted" style="margin-top: -6px">항목 이름은 서명하는 사람에게 보이고, <b>명단 엑셀의 열 제목</b>이 됩니다.
+            <b>필수</b>는 체크(입력)해야 제출할 수 있고, 끄면 선택 항목입니다.</p>
+          <div id="inputs" class="input-list"></div>
         </div>
         <button type="button" class="btn btn-primary btn-lg" id="submit" style="width: 100%">서명 요청 만들기</button>
       </aside>

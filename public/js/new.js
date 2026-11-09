@@ -1,4 +1,4 @@
-import { api, h, COLORS, FIELD_TYPES, toast, bytesToBase64, placeBox, hexToRgba, parseMemberList } from './common.js';
+import { api, h, COLORS, FIELD_TYPES, isInputType, toast, bytesToBase64, placeBox, hexToRgba, parseMemberList } from './common.js';
 import { renderPdf } from './pdfview.js';
 
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -21,9 +21,14 @@ const state = {
 
 const nameOf = (i) => state.signers[i]?.name.trim() || `서명자 ${i + 1}`;
 const colorOf = (f) => (state.mode === 'group' ? FIELD_TYPES[f.type].color : COLORS[f.signerIndex % COLORS.length]);
-const labelOf = (f) => (state.mode === 'group'
-  ? (f.type === 'signature' ? '교육생 서명' : `${FIELD_TYPES[f.type].short} 자동 입력`)
-  : `${nameOf(f.signerIndex)} ${FIELD_TYPES[f.type].short}`);
+const labelOf = (f) => {
+  if (f.type === 'checkbox') return '✓';
+  if (f.type === 'text') return f.label || '입력란';
+  return state.mode === 'group'
+    ? (f.type === 'signature' ? '교육생 서명' : `${FIELD_TYPES[f.type].short} 자동 입력`)
+    : `${nameOf(f.signerIndex)} ${FIELD_TYPES[f.type].short}`;
+};
+const DEFAULT_LABEL = { checkbox: '동의 항목', text: '입력란' };
 
 // ───── 0) 요청 방식 ─────
 function setMode(mode) {
@@ -179,21 +184,64 @@ function setupPage(page) {
     const hgt = (w * page.aspect) / t.ratio;
     const x = clamp((e.clientX - rect.left) / rect.width - w / 2, 0, 1 - w);
     const y = clamp((e.clientY - rect.top) / rect.height - hgt / 2, 0, 1 - hgt);
-    state.fields.push({ type: state.activeType, signerIndex: state.mode === 'group' ? 0 : state.activeSigner, page: page.number, x, y, w, h: hgt });
+    const field = { type: state.activeType, signerIndex: state.mode === 'group' ? 0 : state.activeSigner, page: page.number, x, y, w, h: hgt };
+    if (isInputType(field.type)) {
+      const n = state.fields.filter((f) => f.type === field.type).length + 1;
+      Object.assign(field, { label: `${DEFAULT_LABEL[field.type]} ${n}`, required: true });
+    }
+    state.fields.push(field);
     renderAll();
+    if (isInputType(field.type)) {
+      // 방금 놓은 칸의 항목 이름을 바로 고칠 수 있게
+      const input = $('inputs').querySelector(`[data-index="${state.fields.indexOf(field)}"] input[type=text]`);
+      input?.focus({ preventScroll: true }); // 문서가 움직이면 다음 클릭 위치가 어긋나므로 스크롤하지 않음
+      input?.select();
+    }
   });
+}
+
+/** 체크·입력 칸 목록: 항목 이름과 필수 여부 */
+function renderInputs() {
+  const items = state.fields
+    .map((f, index) => ({ f, index }))
+    .filter(({ f }) => isInputType(f.type));
+  $('inputs-card').hidden = items.length === 0;
+  $('inputs').replaceChildren(...items.map(({ f, index }) => h('div', { class: 'input-row', 'data-index': index },
+    h('span', { class: 'dot', style: { background: colorOf(f) }, title: FIELD_TYPES[f.type].short }),
+    h('span', { class: 'small muted', style: { minWidth: '30px' } }, FIELD_TYPES[f.type].short),
+    h('input', {
+      type: 'text',
+      value: f.label,
+      maxlength: 60,
+      placeholder: DEFAULT_LABEL[f.type],
+      'aria-label': '항목 이름',
+      oninput: (e) => {
+        f.label = e.target.value;
+        if (f.type === 'text') renderBoxes();
+      },
+    }),
+    h('label', { class: 'small', style: { display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' } },
+      h('input', { type: 'checkbox', checked: f.required, onchange: (e) => { f.required = e.target.checked; } }), '필수'),
+    state.mode === 'multi' ? h('span', { class: 'small muted' }, nameOf(f.signerIndex)) : null,
+    h('span', { class: 'small muted' }, `${f.page}쪽`))));
 }
 
 function renderAll() {
   renderChips();
+  renderBoxes();
+  renderInputs();
+}
+
+function renderBoxes() {
   for (const page of state.pages) page.overlay.replaceChildren();
   state.fields.forEach((f) => {
     const page = state.pages[f.page - 1];
     if (!page) return;
     const color = colorOf(f);
     const box = h('div', {
-      class: `sig-box editable${f.type !== 'signature' ? ' auto' : ''}`,
+      class: `sig-box editable${f.type !== 'signature' ? ' auto' : ''}${f.type === 'checkbox' ? ' tiny' : ''}`,
       style: { borderColor: color, color, background: hexToRgba(color, 0.12) },
+      title: isInputType(f.type) ? `${f.label}${f.required ? ' (필수)' : ' (선택)'}` : '',
     },
     h('span', { class: 'label' }, labelOf(f)),
     h('button', {

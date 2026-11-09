@@ -229,7 +229,8 @@ test('전체 서명 흐름 (한 문서에 2명)', async () => {
 
   const final = await getJson(`/api/documents/${doc.id}`);
   assert.equal(final.status, 'completed');
-  assert.deepEqual(final.events.map((e) => e.type), ['created', 'viewed', 'signed', 'viewed', 'signed', 'completed']);
+  // 완료본 메일 기록(completed_mail_*)은 메일 발송이 끝나는 시점에 따라 붙으므로 따로 확인 (fields.test.js)
+  assert.deepEqual(final.events.map((e) => e.type).filter((t) => !t.startsWith('completed_mail')), ['created', 'viewed', 'signed', 'viewed', 'signed', 'completed']);
 
   const completedRes = await call(`/api/documents/${doc.id}/completed.pdf?download`);
   assert.equal(completedRes.status, 200);
@@ -420,7 +421,7 @@ test('교육생 일괄: 생성(본인 확인 필수) → 메일 발송', async (
   assert.equal(bounced.emailStatus, 'failed');
   assert.match(bounced.emailError, /받는 사람 이메일/);
 
-  const kimMail = sentMails.find((m) => m.to.address === 'kim@example.com');
+  const kimMail = sentMails.find((m) => m.to.address === 'kim@example.com' && m.subject.startsWith('[서명 요청]'));
   const kim = group.members.find((m) => m.name === '김교육');
   assert.ok(kim.signLink.startsWith('https://sign.example.com/sign.html?t='));
   assert.equal(kimMail.subject, '[서명 요청] 개인정보 수집·이용 동의서');

@@ -13,6 +13,8 @@ export const EVENT_LABEL = {
   completed: '모든 서명 완료 · 최종 PDF 생성',
   timestamped: '타임스탬프 발급 (서명 시각 증명)',
   timestamp_failed: '타임스탬프 실패 — 타임스탬프 없이 봉인',
+  completed_mail_sent: '서명 완료본 메일 발송',
+  completed_mail_failed: '서명 완료본 메일 발송 실패',
   failed: '최종 PDF 생성 실패',
   cancelled: '서명 요청 취소',
   member_updated: '교육생 정보 수정',
@@ -23,7 +25,11 @@ export const FIELD_TYPES = {
   signature: { label: '✍ 서명', short: '서명', color: '#2f5bea', w: 0.24, ratio: 3 },
   name: { label: '이름 (자동)', short: '이름', color: '#0c8a5a', w: 0.18, ratio: 4.5 },
   date: { label: '날짜 (자동)', short: '날짜', color: '#d97706', w: 0.18, ratio: 4.5 },
+  checkbox: { label: '☑ 체크', short: '체크', color: '#7c3aed', w: 0.035, ratio: 1, input: true },
+  text: { label: '✎ 입력란', short: '입력', color: '#0891b2', w: 0.28, ratio: 7, input: true },
 };
+/** 서명자가 직접 체크·입력하는 칸 */
+export const isInputType = (type) => Boolean(FIELD_TYPES[type]?.input);
 
 export async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(path, {

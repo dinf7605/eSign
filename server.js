@@ -14,7 +14,7 @@ const { createAuth, readCookie } = require('./lib/auth');
 const { buildRosterPdf, buildRosterXlsx } = require('./lib/roster');
 const { createZip, safeFileName } = require('./lib/zip');
 const { createSettings, MAIL_PRESETS } = require('./lib/settings');
-const { createMailer, friendlyMailError, signRequestMail } = require('./lib/mailer');
+const { createMailer, friendlyMailError, signRequestMail, completedCopyMail } = require('./lib/mailer');
 const { normalizePhone } = require('./lib/phone');
 const { requestTimestamp, verifyTimestampToken } = require('./lib/tsa');
 
@@ -24,7 +24,11 @@ const MAX_SIGNERS = 10;
 const MAX_FIELDS = 100;
 const MAX_MEMBERS_PER_REQUEST = 500;
 const MAX_MEMBERS_PER_GROUP = 1000;
-const FIELD_TYPES = ['signature', 'name', 'date'];
+const FIELD_TYPES = ['signature', 'name', 'date', 'checkbox', 'text'];
+/** 서명자가 직접 체크·입력하는 칸 */
+const INPUT_TYPES = ['checkbox', 'text'];
+const MAX_TEXT_VALUE = 200;
+const DEFAULT_LABEL = { checkbox: '체크 항목', text: '입력란' };
 const CONSENT_TEXT = '본인은 위 문서의 내용을 확인하였으며, 이 전자서명이 본인의 서명임에 동의합니다.';
 const VERIFY_MAX_FAILURES = 5;
 const VERIFY_LOCK_MS = 15 * 60 * 1000;
@@ -117,6 +121,25 @@ function parsePerson(p, label, { requirePhone = false } = {}) {
   };
 }
 
+/** 서명자가 보낸 체크·입력값을 검사한다. 필수 항목이 비면 거절. */
+function parseAnswers(inputFields, values) {
+  return inputFields.map((field) => {
+    const raw = values[field.id];
+    if (field.type === 'checkbox') {
+      if (raw !== undefined && typeof raw !== 'boolean') fail(400, '체크 항목 값이 올바르지 않습니다.');
+      const value = raw === true;
+      if (field.required && !value) fail(400, `필수 항목 "${field.label}"에 체크해 주세요.`);
+      return { field, value };
+    }
+    if (raw !== undefined && typeof raw !== 'string') fail(400, '입력값 형식이 올바르지 않습니다.');
+    // eslint-disable-next-line no-control-regex
+    const value = String(raw ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+    if (value.length > MAX_TEXT_VALUE) fail(400, `"${field.label}"은(는) ${MAX_TEXT_VALUE}자 이하로 입력해 주세요.`);
+    if (field.required && !value) fail(400, `"${field.label}" 칸을 입력해 주세요.`);
+    return { field, value };
+  });
+}
+
 function parseFields(fieldsIn, pageCount, signerCount) {
   if (!Array.isArray(fieldsIn) || fieldsIn.length < 1 || fieldsIn.length > MAX_FIELDS) fail(400, `서명란은 1~${MAX_FIELDS}개여야 합니다.`);
   return fieldsIn.map((f) => {
@@ -129,7 +152,12 @@ function parseFields(fieldsIn, pageCount, signerCount) {
       && [f.x, f.y, f.w, f.h].every(isFraction)
       && f.w >= 0.02 && f.h >= 0.01 && f.x + f.w <= 1.0001 && f.y + f.h <= 1.0001;
     if (!ok) fail(400, '서명란 위치 정보가 올바르지 않습니다.');
-    return { type, signerIndex, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h };
+    const field = { type, signerIndex, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h };
+    if (INPUT_TYPES.includes(type)) {
+      field.label = cleanText(f.label, { field: '항목 이름', max: 60, required: false }).replace(/\s+/g, ' ') || DEFAULT_LABEL[type];
+      field.required = f.required !== false;
+    }
+    return field;
   });
 }
 
@@ -181,6 +209,7 @@ function newDocRecord({ title, fileName, originalFile, originalHash, pageCount, 
   const signers = people.map((p) => ({ id: crypto.randomUUID(), ...p, token: newToken(), status: 'pending' }));
   const docFields = fields.map((f) => ({
     id: crypto.randomUUID(), signerId: signers[f.signerIndex].id, type: f.type, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h,
+    ...(INPUT_TYPES.includes(f.type) ? { label: f.label, required: f.required } : {}),
   }));
   const missing = signers.find((s) => !docFields.some((f) => f.signerId === s.id && f.type === 'signature'));
   if (missing) fail(400, people.length === 1 ? '서명란(✍ 서명)을 1개 이상 배치해 주세요.' : `${missing.name} 님의 서명란을 1개 이상 배치해 주세요.`);
@@ -226,12 +255,17 @@ function ownerView(doc, base) {
       status: s.status,
       verifiedAt: s.verifiedAt || null,
       emailSentAt: s.emailSentAt || null,
+      completedMailAt: s.completedMailAt || null,
+      completedMailError: s.completedMailError || null,
       viewedAt: s.viewedAt || null,
       signedAt: s.signedAt || null,
       signPath: `/sign.html?t=${s.token}`,
       signLink: `${base}/sign.html?t=${s.token}`,
     })),
-    fields: doc.fields.map(({ id, signerId, page, x, y, w, h, ...rest }) => ({ id, signerId, type: typeOf(rest), page, x, y, w, h })),
+    fields: doc.fields.map(({ id, signerId, page, x, y, w, h, label, required, value, ...rest }) => ({
+      id, signerId, type: typeOf(rest), page, x, y, w, h,
+      ...(INPUT_TYPES.includes(typeOf(rest)) ? { label, required: Boolean(required), value: value ?? null } : {}),
+    })),
     events: doc.events.map(({ at, type, name, ip, detail }) => ({ at, type, name: name || null, ip: ip || null, detail: detail || null })),
   };
 }
@@ -246,7 +280,10 @@ function signerView(doc, signer) {
     signer: { name: signer.name, status: signer.status, signedAt: signer.signedAt || null },
     fields: doc.fields
       .filter((f) => f.signerId === signer.id)
-      .map((f) => ({ id: f.id, type: typeOf(f), page: f.page, x: f.x, y: f.y, w: f.w, h: f.h })),
+      .map((f) => ({
+        id: f.id, type: typeOf(f), page: f.page, x: f.x, y: f.y, w: f.w, h: f.h,
+        ...(INPUT_TYPES.includes(typeOf(f)) ? { label: f.label, required: Boolean(f.required), value: f.value ?? null } : {}),
+      })),
   };
 }
 
@@ -399,6 +436,7 @@ function createApp({
     if (body.publicUrl !== undefined) patch.publicUrl = parsePublicUrl(body.publicUrl);
     if (body.mail !== undefined) patch.mail = parseMailSettings(body.mail);
     if (body.tsa !== undefined) patch.tsa = parseTsaSettings(body.tsa);
+    if (body.sendCompletedCopy !== undefined) patch.sendCompletedCopy = body.sendCompletedCopy === true;
     settings.update(patch);
     res.json({ ...settings.view(), current: { publicBaseUrl: baseUrl(req), reach: reachability(baseUrl(req)) } });
   });
@@ -525,6 +563,8 @@ function createApp({
         emailError: s.emailError || null,
         ip: s.status === 'signed' ? s.ip || '' : '',
         completedHash: d.completedHash || '',
+        answers: d.fields.filter((f) => INPUT_TYPES.includes(typeOf(f))).map((f) => ({ type: f.type, label: f.label, value: f.value ?? null })),
+        completedMailAt: s.completedMailAt || null,
         signLink: `${base}/sign.html?t=${s.token}`,
       };
     });
@@ -771,7 +811,8 @@ function createApp({
     const group = getGroup(req);
     const { rows, signedOnly } = rosterRows(group, req);
     attachment(res, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', `${signedOnly ? '서명자명단' : '서명현황'}_${safeFileName(group.title)}.xlsx`);
-    res.send(buildRosterXlsx(rows, { signedOnly }));
+    const inputLabels = group.fields.filter((f) => INPUT_TYPES.includes(typeOf(f))).map((f) => f.label);
+    res.send(buildRosterXlsx(rows, { signedOnly, inputLabels }));
   });
 
   app.get('/api/groups/:id/signed.zip', (req, res) => {
@@ -886,9 +927,11 @@ function createApp({
     if (doc.status !== 'pending') fail(409, '이미 완료되었거나 처리 중인 문서입니다.');
     if (signer.status === 'signed') fail(409, '이미 서명하셨습니다.');
 
-    const { consent, signatures } = req.body || {};
+    const { consent, signatures, values = {} } = req.body || {};
     if (consent !== true) fail(400, '전자서명 동의에 체크해 주세요.');
     if (!signatures || typeof signatures !== 'object') fail(400, '서명이 없습니다.');
+    if (!values || typeof values !== 'object' || Array.isArray(values)) fail(400, '입력값 형식이 올바르지 않습니다.');
+    const answers = parseAnswers(doc.fields.filter((f) => f.signerId === signer.id && INPUT_TYPES.includes(typeOf(f))), values);
 
     // 이름·날짜 칸은 자동 입력이므로 서명 이미지는 "서명" 칸에만 받는다
     const myFields = doc.fields.filter((f) => f.signerId === signer.id && typeOf(f) === 'signature');
@@ -910,6 +953,7 @@ function createApp({
       field.signatureFile = `${doc.id}-${field.id}.png`;
       fs.writeFileSync(store.filePath(field.signatureFile), png);
     }
+    for (const { field, value } of answers) field.value = value;
     const meta = requestMeta(req);
     Object.assign(signer, { status: 'signed', signedAt: now(), ...meta });
     doc.events.push({ at: signer.signedAt, type: 'signed', name: signer.name, ...meta });
@@ -927,7 +971,38 @@ function createApp({
     }
     store.save();
     res.json(signerView(doc, signer));
+    if (doc.status === 'completed') sendCompletedCopies(doc);
   }));
+
+  /** 서명 완료본 PDF를 이메일이 있는 서명자에게 보낸다 (응답을 기다리게 하지 않음) */
+  const pendingMails = new Set();
+  function sendCompletedCopies(doc) {
+    if (!settings.sendCompletedCopy() || !mailer.configured()) return;
+    const targets = doc.signers.filter((s) => s.email && !s.completedMailAt);
+    if (targets.length === 0) return;
+    const pdf = fs.readFileSync(store.filePath(doc.completedFile));
+    for (const s of targets) {
+      const mail = completedCopyMail({ title: doc.title, name: s.name, signedAt: s.signedAt });
+      const job = mailer.sendOne({
+        to: { name: s.name, address: s.email },
+        ...mail,
+        attachments: [{ filename: completedName(doc), content: pdf, contentType: 'application/pdf' }],
+      }).then(() => {
+        s.completedMailAt = now();
+        s.completedMailError = null;
+        doc.events.push({ at: s.completedMailAt, type: 'completed_mail_sent', name: s.name });
+      }, (err) => {
+        s.completedMailError = friendlyMailError(err);
+        doc.events.push({ at: now(), type: 'completed_mail_failed', name: s.name, detail: s.completedMailError });
+      }).finally(() => {
+        store.save();
+        pendingMails.delete(job);
+      });
+      pendingMails.add(job);
+    }
+  }
+  /** 테스트용: 보내는 중인 완료본 메일이 모두 끝날 때까지 기다린다 */
+  app.flushMails = () => Promise.all([...pendingMails]);
 
   async function finalize(doc) {
     const originalBytes = fs.readFileSync(store.filePath(doc.originalFile));

@@ -126,10 +126,11 @@ tr.clickable:hover td { background: #f7f9fd; }
 
 /* ── PDF 뷰어 ── */
 .editor { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
-.editor-side { position: sticky; top: 78px; }
+/* 옆 칸이 화면보다 길면 옆 칸 안에서만 스크롤 (입력할 때 문서 쪽이 같이 움직이지 않도록) */
+.editor-side { position: sticky; top: 78px; max-height: calc(100vh - 90px); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
 @media (max-width: 860px) {
   .editor { grid-template-columns: 1fr; }
-  .editor-side { position: static; }
+  .editor-side { position: static; max-height: none; overflow: visible; padding-right: 0; }
 }
 .pdf-pages { display: flex; flex-direction: column; gap: 18px; align-items: center; }
 .pdf-page {
@@ -311,3 +312,33 @@ td.mail-cell { max-width: 220px; }
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 #toast.error { background: var(--danger); }
+
+/* 체크 칸·입력란 (서명자가 직접) */
+.sig-box.input-check, .sig-box.input-text {
+  border: 1.5px solid #7c3aed; background: rgba(124, 58, 237, 0.06); color: #4c1d95; container-type: size;
+}
+.sig-box.input-check { cursor: pointer; border-radius: 3px; }
+.sig-box.input-check .mark { font-size: 14px; font-size: clamp(9px, 85cqh, 24px); line-height: 1; font-weight: 800; pointer-events: none; }
+.sig-box.input-text { border-color: #0891b2; background: rgba(8, 145, 178, 0.06); padding: 0; }
+.sig-box.input-text input {
+  width: 100%; height: 100%; border: none; outline: none; background: transparent; padding: 0 4px; margin: 0;
+  font-size: 14px; font-size: clamp(9px, 60cqh, 18px); color: #0b3a4a; min-height: 0; border-radius: 0; box-shadow: none;
+}
+.sig-box.input-text input::placeholder { color: #6b9aa8; }
+.sig-box.need { border-color: #f08c00; border-style: dashed; background: rgba(255, 196, 0, 0.16); }
+.sig-box.need.done, .sig-box.input-check.done, .sig-box.input-text.done { border-style: solid; border-color: var(--ok); background: rgba(19, 138, 82, 0.06); }
+.sig-box.input-check:focus-visible, .sig-box.input-text:focus-within { outline: 2px solid var(--primary, #2f5bea); outline-offset: 1px; }
+
+/* 편집기: 아주 작은 체크 칸 */
+.sig-box.tiny .label { font-size: 11px; padding: 0; }
+.sig-box.tiny .del { top: -12px; right: -12px; }
+.input-list { display: flex; flex-direction: column; gap: 8px; }
+.input-row { display: flex; align-items: center; gap: 8px; }
+.input-row input[type=text] { flex: 1; min-width: 0; }
+/* 휴대폰에서 작은 체크 칸도 누르기 쉽게: 보이지 않는 터치 영역을 넓힌다 + 옆에 항목 이름 */
+.sig-box.input-check::after { content: ''; position: absolute; inset: -12px; }
+.sig-box.input-check .cap {
+  position: absolute; left: calc(100% + 5px); top: 50%; transform: translateY(-50%);
+  font-size: 11px; font-weight: 600; white-space: nowrap; color: #4c1d95; background: rgba(255, 255, 255, 0.9);
+  padding: 1px 4px; border-radius: 3px; pointer-events: none; line-height: 1.3;
+}
