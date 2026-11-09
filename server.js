@@ -26,6 +26,7 @@ const MAX_TEMPLATES = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_DEADLINE_MS = 366 * DAY_MS; // 기한은 1년 안쪽
 const REMIND_DAY_CHOICES = [1, 2, 3, 5, 7]; // "기한 N일 전" 자동 다시 알림
+const RETENTION_CHOICES = [0, 3, 6, 12, 24, 36, 60]; // 보관 기간(개월), 0 = 자동 삭제 안 함
 const MAX_MEMBERS_PER_REQUEST = 500;
 const MAX_MEMBERS_PER_GROUP = 1000;
 const FIELD_TYPES = ['signature', 'name', 'date', 'checkbox', 'text'];
@@ -369,7 +370,7 @@ function createApp({
 
   // 인터넷(터널)으로는 서명·문서 검증만 연다. 관리자 화면·API는 서버를 켠 PC(또는 같은 Wi-Fi)에서만.
   const ADMIN_PAGES = new Set(['/', '/index.html', '/new.html', '/group.html', '/doc.html', '/settings.html', '/login.html']);
-  const ADMIN_API = ['/api/auth', '/api/documents', '/api/groups', '/api/templates', '/api/server-info', '/api/settings'];
+  const ADMIN_API = ['/api/auth', '/api/documents', '/api/groups', '/api/templates', '/api/retention', '/api/server-info', '/api/settings'];
   app.use((req, res, next) => {
     if (!req.viaTunnel) return next();
     // Express 경로는 대소문자를 구분하지 않고(/API/documents == /api/documents),
@@ -412,7 +413,7 @@ function createApp({
   // ───────────── 로그인 ─────────────
   app.use('/api/auth', auth.router);
   // 아래 경로는 관리자만 (서명자 API·검증 API는 제외)
-  app.use(['/api/documents', '/api/groups', '/api/templates', '/api/server-info', '/api/settings'], auth.requireAdmin);
+  app.use(['/api/documents', '/api/groups', '/api/templates', '/api/retention', '/api/server-info', '/api/settings'], auth.requireAdmin);
 
   app.get('/api/server-info', (req, res) => {
     const base = baseUrl(req);
@@ -447,6 +448,10 @@ function createApp({
     if (body.mail !== undefined) patch.mail = parseMailSettings(body.mail);
     if (body.tsa !== undefined) patch.tsa = parseTsaSettings(body.tsa);
     if (body.sendCompletedCopy !== undefined) patch.sendCompletedCopy = body.sendCompletedCopy === true;
+    if (body.retentionMonths !== undefined) {
+      if (!RETENTION_CHOICES.includes(body.retentionMonths)) fail(400, `보관 기간은 ${RETENTION_CHOICES.filter(Boolean).join('·')}개월 중에서 고르거나 "자동 삭제 안 함"으로 두세요.`);
+      patch.retentionMonths = body.retentionMonths;
+    }
     settings.update(patch);
     res.json({ ...settings.view(), current: { publicBaseUrl: baseUrl(req), reach: reachability(baseUrl(req)) } });
   });
@@ -524,7 +529,10 @@ function createApp({
     ? `${safeFileName(doc.title)}_${safeFileName(doc.signers[0].name)}_서명완료.pdf`
     : `${doc.fileName.replace(/\.pdf$/i, '')}_서명완료.pdf`);
 
-  app.get('/api/documents/:id', (req, res) => res.json(ownerView(getOwnedDoc(req), baseUrl(req))));
+  app.get('/api/documents/:id', (req, res) => {
+    const doc = getOwnedDoc(req);
+    res.json({ ...ownerView(doc, baseUrl(req)), deleteAt: doc.groupId ? null : deleteAtOf(endOfDoc(doc)) });
+  });
 
   app.get('/api/documents/:id/original.pdf', (req, res) => {
     const doc = getOwnedDoc(req);
@@ -608,6 +616,7 @@ function createApp({
       nextReminderAt: nextReminderAt(group),
       reminders: group.reminders || [],
       reminderError: group.reminderError || null,
+      deleteAt: deleteAtOf(endOfGroup(group)),
     };
   }
 
@@ -979,7 +988,131 @@ function createApp({
     return Promise.all(jobs);
   }
   app.runReminders = runReminders; // 테스트용
-  if (reminderIntervalMs > 0) setInterval(runReminders, reminderIntervalMs).unref();
+  if (reminderIntervalMs > 0) {
+    setInterval(() => {
+      runReminders();
+      try {
+        runRetention();
+      } catch (err) {
+        console.error('[보관 기간] 자동 삭제 오류', err);
+      }
+    }, reminderIntervalMs).unref();
+  }
+
+  // ───────────── 보관 기간 · 삭제(파기) ─────────────
+  // 지우면 db.json 기록과 files/ 의 원본·서명 이미지·완료 PDF가 함께 사라진다. 되돌릴 수 없다.
+  // 파기 기록에는 개인정보 없이 "무엇을(제목·인원) 언제 왜 지웠는지"만 남긴다.
+
+  const filesOfDoc = (doc) => [doc.originalFile, doc.completedFile, ...doc.fields.map((f) => f.signatureFile)].filter(Boolean);
+  const latest = (isoList) => isoList.filter(Boolean).reduce((a, b) => (a > b ? a : b), '');
+  const allMemberDocs = (group) => group.memberDocIds.map((id) => store.findDocument(id)).filter(Boolean);
+  /** 요청이 "끝난" 날: 만든 날·기한·마지막 서명 중 가장 늦은 날 */
+  const endOfGroup = (group) => latest([group.createdAt, group.deadline, ...allMemberDocs(group).map((d) => d.signers[0].signedAt)]);
+  const endOfDoc = (doc) => latest([doc.createdAt, doc.completedAt, ...doc.signers.map((s) => s.signedAt)]);
+  function deleteAtOf(endIso) {
+    const months = settings.retentionMonths();
+    if (!months || !endIso) return null;
+    const d = new Date(endIso);
+    d.setMonth(d.getMonth() + months);
+    return d.toISOString();
+  }
+
+  function removeFiles(names) {
+    for (const name of new Set(names)) fs.rmSync(store.filePath(name), { force: true });
+  }
+
+  function deleteGroup(group, reason) {
+    if (sendJobs.get(group.id)?.running) fail(409, '메일을 보내는 중에는 지울 수 없습니다. 발송이 끝난 뒤 다시 시도해 주세요.');
+    const docs = allMemberDocs(group);
+    if (docs.some((d) => d.status === 'finalizing')) fail(409, '서명 완료 PDF를 만드는 중입니다. 잠시 뒤 다시 시도해 주세요.');
+    store.removeDocuments(new Set(docs.map((d) => d.id)));
+    store.removeGroup(group.id);
+    sendJobs.delete(group.id);
+    removeFiles([group.templateFile, ...docs.flatMap(filesOfDoc)]);
+    store.addDeletion({
+      at: new Date(clock()).toISOString(),
+      reason,
+      kind: 'group',
+      title: group.title,
+      createdAt: group.createdAt,
+      people: docs.length,
+      signed: docs.filter((d) => d.signers[0].status === 'signed').length,
+    });
+  }
+
+  function deleteDocument(doc, reason) {
+    if (doc.status === 'finalizing') fail(409, '서명 완료 PDF를 만드는 중입니다. 잠시 뒤 다시 시도해 주세요.');
+    store.removeDocuments(new Set([doc.id]));
+    removeFiles(filesOfDoc(doc));
+    store.addDeletion({
+      at: new Date(clock()).toISOString(),
+      reason,
+      kind: 'document',
+      title: doc.title,
+      createdAt: doc.createdAt,
+      people: doc.signers.length,
+      signed: doc.signers.filter((s) => s.status === 'signed').length,
+    });
+  }
+
+  const requireDeleteConfirm = (req) => {
+    if (req.body?.confirm !== 'delete') fail(400, '삭제를 확인해 주세요.');
+  };
+
+  app.post('/api/groups/:id/delete', (req, res) => {
+    requireDeleteConfirm(req);
+    deleteGroup(getGroup(req), 'manual');
+    res.json({ ok: true });
+  });
+
+  app.post('/api/documents/:id/delete', (req, res) => {
+    requireDeleteConfirm(req);
+    const doc = getOwnedDoc(req);
+    if (doc.groupId) fail(400, '교육생 일괄 요청에 속한 문서입니다. 교육생 한 명은 "취소"하고, 요청 전체는 교육생 현황 화면에서 지우세요.');
+    deleteDocument(doc, 'manual');
+    res.json({ ok: true });
+  });
+
+  /** 보관 기간이 지난 요청·문서를 지운다. 지운 개수를 돌려준다 */
+  function runRetention() {
+    if (!settings.retentionMonths()) return 0;
+    const due = (endIso) => {
+      const at = deleteAtOf(endIso);
+      return at && Date.parse(at) <= clock();
+    };
+    let count = 0;
+    for (const group of store.groups().slice()) {
+      if (sendJobs.get(group.id)?.running || !due(endOfGroup(group))) continue;
+      try {
+        deleteGroup(group, 'auto');
+        count += 1;
+      } catch (err) {
+        if (!(err instanceof HttpError)) throw err; // 처리 중이면 다음에 다시
+      }
+    }
+    for (const doc of store.documents().filter((d) => !d.groupId && d.status !== 'finalizing')) {
+      if (!due(endOfDoc(doc))) continue;
+      deleteDocument(doc, 'auto');
+      count += 1;
+    }
+    return count;
+  }
+  app.runRetention = runRetention; // 테스트용
+
+  /** 보관 기간 설정 + 곧(30일 안) 자동 삭제될 것 + 파기 기록 */
+  app.get('/api/retention', (req, res) => {
+    const soon = clock() + 30 * DAY_MS;
+    const upcoming = [
+      ...store.groups().map((g) => ({ kind: 'group', id: g.id, title: g.title, deleteAt: deleteAtOf(endOfGroup(g)) })),
+      ...store.documents().filter((d) => !d.groupId).map((d) => ({ kind: 'document', id: d.id, title: d.title, deleteAt: deleteAtOf(endOfDoc(d)) })),
+    ].filter((x) => x.deleteAt && Date.parse(x.deleteAt) <= soon).sort((a, b) => a.deleteAt.localeCompare(b.deleteAt));
+    res.json({
+      months: settings.retentionMonths(),
+      choices: RETENTION_CHOICES,
+      upcoming,
+      deletions: store.deletions().slice(-50).reverse(),
+    });
+  });
 
   // ── 서명자 명단 / 현황 내보내기 ──
 

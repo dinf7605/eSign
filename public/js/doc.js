@@ -1,4 +1,4 @@
-import { api, h, fmtDate, badge, toast, copyText, COLORS, EVENT_LABEL, FIELD_TYPES, placeBox, hexToRgba } from './common.js';
+import { api, h, fmtDate, badge, toast, copyText, COLORS, EVENT_LABEL, FIELD_TYPES, placeBox, hexToRgba, confirmDelete } from './common.js';
 import { renderPdf } from './pdfview.js';
 
 const params = new URLSearchParams(location.search);
@@ -22,6 +22,23 @@ async function load() {
   if (doc.status === 'pending' || doc.status === 'finalizing') setTimeout(load, 4000);
 }
 
+async function deleteDoc(doc) {
+  const yes = await confirmDelete({
+    title: `"${doc.title}" 문서를 삭제할까요?`,
+    lines: [
+      `서명자 ${doc.signers.length}명의 정보, 서명 이미지, 원본·서명 완료 PDF가 모두 지워지고 서명 링크도 더 이상 열리지 않습니다.`,
+      h('b', {}, '되돌릴 수 없습니다. 필요하면 먼저 서명 완료 PDF를 내려받아 두세요.'),
+    ],
+  });
+  if (!yes) return;
+  try {
+    await api(`/api/documents/${encodeURIComponent(doc.id)}/delete`, { method: 'POST', body: { confirm: 'delete' } });
+    location.href = '/?deleted=1';
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
 const colorFor = (doc, signerId) => COLORS[doc.signers.findIndex((s) => s.id === signerId) % COLORS.length];
 
 function render(doc) {
@@ -31,10 +48,12 @@ function render(doc) {
   const header = h('div', { class: 'row spread', style: { marginBottom: '18px' } },
     h('div', { class: 'grow' },
       h('div', { class: 'row', style: { gap: '10px' } }, h('h1', {}, doc.title), badge(doc.status)),
-      h('p', { class: 'sub', style: { margin: 0 } }, `${doc.fileName} · ${doc.pageCount}쪽 · 요청 ${fmtDate(doc.createdAt)}`)),
+      h('p', { class: 'sub', style: { margin: 0 } }, `${doc.fileName} · ${doc.pageCount}쪽 · 요청 ${fmtDate(doc.createdAt)}`),
+      doc.deleteAt ? h('p', { class: 'small muted', style: { margin: '4px 0 0' } }, `🗄 보관 기간이 끝나면 ${fmtDate(doc.deleteAt)}에 자동 삭제됩니다`) : null),
     h('div', { class: 'row' },
       h('a', { class: 'btn', href: `${base}/original.pdf?download` }, '원본 PDF'),
-      doc.status === 'completed' ? h('a', { class: 'btn btn-primary', href: `${base}/completed.pdf?download` }, '⬇ 서명 완료 PDF') : null));
+      doc.status === 'completed' ? h('a', { class: 'btn btn-primary', href: `${base}/completed.pdf?download` }, '⬇ 서명 완료 PDF') : null,
+      doc.groupId ? null : h('button', { type: 'button', class: 'btn btn-ghost btn-danger-text', onclick: () => deleteDoc(doc) }, '🗑 삭제')));
 
   const notice = params.has('created') && doc.status === 'pending'
     ? h('div', { class: 'result info', style: { marginTop: 0, marginBottom: '18px' } },

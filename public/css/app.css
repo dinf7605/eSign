@@ -359,3 +359,10 @@ td.mail-cell { max-width: 220px; }
 .remind-choices { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-top: 10px; }
 .remind-choices label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .remind-choices.disabled { opacity: 0.45; }
+
+/* 삭제(파기) */
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+.danger-dialog h2 { color: var(--danger); }
+#deletions table { width: 100%; }
+#deletions td { vertical-align: top; }

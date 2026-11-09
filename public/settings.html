@@ -86,6 +86,19 @@
         <button type="button" class="btn" id="tsa-test">연결 테스트</button>
       </div>
     </form>
+
+    <form class="card" id="retention-form">
+      <h2>4. 보관 기간 (개인정보 파기)</h2>
+      <p class="small muted" style="margin-top: -6px">요청이 끝난 날(만든 날·서명 기한·마지막 서명 중 가장 늦은 날)부터 정한 기간이 지나면
+        교육생 정보·서명 이미지·서명 완료 PDF를 <b>자동으로 영구 삭제</b>합니다. 각 요청 화면에서 직접 지울 수도 있습니다.</p>
+      <label class="field"><span>보관 기간</span><select id="retention-months" style="width: 100%"></select></label>
+      <div id="retention-upcoming" class="small" style="margin-bottom: 12px"></div>
+      <div class="row"><button type="submit" class="btn btn-primary">저장</button></div>
+      <hr class="divider">
+      <h3 style="margin: 0 0 6px; font-size: 15px">파기 기록</h3>
+      <p class="small muted" style="margin: 0 0 8px">개인정보 없이 무엇을(제목·인원) 언제 왜 지웠는지만 남깁니다. 최근 50건.</p>
+      <div id="deletions" class="small"></div>
+    </form>
   </main>
 </body>
 </html>

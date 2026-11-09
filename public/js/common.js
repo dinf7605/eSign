@@ -214,3 +214,39 @@ export function deadlineInput({ deadline = null, autoRemind = [3, 1] } = {}) {
     }),
   };
 }
+
+// ───── 삭제(파기) 확인: "삭제"를 직접 입력해야 버튼이 켜진다 ─────
+/**
+ * @param {{ title: string, lines: (string|Node)[] }} p
+ * @returns {Promise<boolean>}
+ */
+export function confirmDelete({ title, lines }) {
+  return new Promise((resolve) => {
+    const input = h('input', { type: 'text', placeholder: '삭제', autocomplete: 'off', 'aria-label': '확인 문구' });
+    const ok = h('button', { type: 'submit', class: 'btn btn-danger', disabled: true }, '영구 삭제');
+    const dialog = h('dialog', { class: 'danger-dialog' },
+      h('form', {
+        onsubmit: (e) => {
+          e.preventDefault();
+          if (input.value.trim() !== '삭제') return;
+          dialog.close('ok');
+        },
+      },
+      h('div', { class: 'dialog-body' },
+        h('h2', {}, title),
+        h('ul', { class: 'small', style: { paddingLeft: '18px', margin: '0 0 12px' } }, ...lines.map((l) => h('li', {}, l))),
+        h('label', { class: 'field' }, h('span', {}, '확인을 위해 "삭제"를 입력하세요'), input)),
+      h('div', { class: 'dialog-foot' },
+        h('span', { class: 'grow' }),
+        h('button', { type: 'button', class: 'btn', onclick: () => dialog.close('cancel') }, '취소'),
+        ok)));
+    input.addEventListener('input', () => { ok.disabled = input.value.trim() !== '삭제'; });
+    dialog.addEventListener('close', () => {
+      resolve(dialog.returnValue === 'ok');
+      dialog.remove();
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    input.focus();
+  });
+}

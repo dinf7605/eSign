@@ -1,4 +1,4 @@
-import { api, h, fmtDate, toast, copyText, parseMemberList, deadlineInput, fmtDeadline, dDay } from './common.js';
+import { api, h, fmtDate, toast, copyText, parseMemberList, deadlineInput, fmtDeadline, dDay, confirmDelete } from './common.js';
 
 const params = new URLSearchParams(location.search);
 const id = params.get('id') || '';
@@ -42,7 +42,9 @@ function renderHead() {
       h('div', { class: 'row', style: { gap: '4px', marginTop: '6px' } },
         deadlineBadge(),
         h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onclick: openDeadline }, group.deadline ? '기한 변경' : '⏰ 서명 기한 정하기'),
-        h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onclick: saveAsTemplate, title: '다음 기수에 같은 문서·칸 배치를 다시 쓰려면' }, '💾 템플릿으로 저장'))),
+        h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onclick: saveAsTemplate, title: '다음 기수에 같은 문서·칸 배치를 다시 쓰려면' }, '💾 템플릿으로 저장'),
+        h('button', { type: 'button', class: 'btn btn-sm btn-ghost btn-danger-text', onclick: deleteGroup }, '🗑 요청 삭제')),
+      group.deleteAt ? h('p', { class: 'small muted', style: { margin: '4px 0 0' } }, `🗄 보관 기간이 끝나면 ${fmtDate(group.deleteAt)}에 자동 삭제됩니다 (설정 → 보관 기간)`) : null),
     deadlineNotice(),
     params.has('created') ? h('div', { class: 'result info', style: { marginTop: 0, marginBottom: '16px' } },
       h('h3', {}, `교육생 ${total}명의 서명 요청이 만들어졌습니다 🎉`),
@@ -117,6 +119,27 @@ $('deadline-form').addEventListener('submit', async (e) => {
   }
   return undefined;
 });
+
+/** 요청 전체 영구 삭제 (교육생 개인정보·서명·완료 PDF 모두) */
+async function deleteGroup() {
+  const { total, signed } = group.counts;
+  const yes = await confirmDelete({
+    title: `"${group.title}" 요청을 삭제할까요?`,
+    lines: [
+      `교육생 ${total}명(서명 ${signed}명)의 이름·연락처·이메일, 서명 이미지, 개인별 서명 완료 PDF, 원본 문서가 모두 지워집니다.`,
+      '서명 링크도 더 이상 열리지 않고, "문서 검증"의 등록 문서 대조도 되지 않습니다. (내려받은 PDF 안의 전자서명 검사는 계속 됩니다)',
+      h('b', {}, '되돌릴 수 없습니다. 필요하면 먼저 명단 엑셀·PDF와 개인별 서명 PDF(ZIP)를 내려받아 두세요.'),
+      '파기 기록(제목·인원·삭제 시각)만 설정 화면에 남습니다.',
+    ],
+  });
+  if (!yes) return;
+  try {
+    await api(`${base}/delete`, { method: 'POST', body: { confirm: 'delete' } });
+    location.href = '/?deleted=1';
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
 
 /** 이 요청의 문서와 칸 배치를 다음 기수에 다시 쓰도록 템플릿으로 저장 */
 async function saveAsTemplate() {

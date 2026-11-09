@@ -6,6 +6,19 @@ const progress = (done, total) => h('div', { class: 'progress-cell' },
 
 const go = (href) => () => { location.href = href; };
 
+if (new URLSearchParams(location.search).has('deleted')) {
+  toast('삭제했습니다. 설정 화면의 "파기 기록"에 남았습니다.');
+  history.replaceState(null, '', '/');
+}
+
+api('/api/retention').then((r) => {
+  const soon = r.upcoming.filter((x) => new Date(x.deleteAt).getTime() - Date.now() < 14 * 86400000);
+  if (soon.length === 0) return;
+  document.getElementById('retention-notice').replaceChildren(h('div', { class: 'result bad', style: { marginTop: 0, marginBottom: '16px' } },
+    h('b', {}, `🗄 2주 안에 보관 기간이 끝나 자동 삭제될 요청 ${soon.length}건`),
+    h('div', { class: 'small' }, '필요한 명단·서명 PDF는 미리 내려받아 두세요. ', h('a', { href: '/settings.html#retention-form' }, '목록 보기 →'))));
+}).catch(() => {});
+
 try {
   const [groups, docs] = await Promise.all([api('/api/groups'), api('/api/documents')]);
 

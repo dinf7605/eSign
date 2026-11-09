@@ -1,4 +1,4 @@
-import { api, h, toast } from './common.js';
+import { api, h, toast, fmtDate } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 let data;
@@ -107,6 +107,43 @@ $('mail-form').addEventListener('submit', async (e) => {
   }
 });
 
+// ───── 보관 기간 · 파기 기록 ─────
+const MONTH_LABEL = (m) => (m === 0 ? '자동 삭제 안 함' : m % 12 === 0 ? `${m / 12}년` : `${m}개월`);
+async function loadRetention() {
+  const r = await api('/api/retention');
+  $('retention-months').replaceChildren(...r.choices.map((m) => h('option', { value: String(m), selected: m === r.months }, MONTH_LABEL(m))));
+  $('retention-upcoming').replaceChildren(r.months === 0
+    ? h('div', { class: 'result info', style: { marginTop: 0 } }, '지금은 자동으로 지우지 않습니다. 교육이 끝난 요청은 각 화면에서 직접 지우거나, 보관 기간을 정해 두세요.')
+    : r.upcoming.length
+      ? h('div', { class: 'result bad', style: { marginTop: 0 } },
+        h('b', {}, `30일 안에 자동 삭제될 요청 ${r.upcoming.length}건`),
+        h('ul', { style: { margin: '6px 0 0', paddingLeft: '18px' } }, ...r.upcoming.map((x) => h('li', {},
+          h('a', { href: x.kind === 'group' ? `/group.html?id=${encodeURIComponent(x.id)}` : `/doc.html?id=${encodeURIComponent(x.id)}` }, x.title),
+          ` — ${fmtDate(x.deleteAt)}`))))
+      : h('div', { class: 'result ok', style: { marginTop: 0 } }, `✅ 보관 기간 ${MONTH_LABEL(r.months)} · 30일 안에 자동 삭제될 요청은 없습니다.`));
+  $('deletions').replaceChildren(r.deletions.length
+    ? h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, '삭제 시각'), h('th', {}, '제목'), h('th', {}, '인원'), h('th', {}, '이유'))),
+      h('tbody', {}, ...r.deletions.map((d) => h('tr', {},
+        h('td', {}, fmtDate(d.at)),
+        h('td', {}, d.title, h('div', { class: 'muted' }, `${d.kind === 'group' ? '교육생 일괄' : '개별 문서'} · 만든 날 ${fmtDate(d.createdAt)}`)),
+        h('td', {}, `${d.people}명 (서명 ${d.signed})`),
+        h('td', {}, d.reason === 'auto' ? '보관 기간 만료' : '직접 삭제')))))
+    : h('div', { class: 'muted' }, '아직 없습니다.'));
+}
+
+$('retention-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const months = Number($('retention-months').value);
+  if (months && !window.confirm(`보관 기간을 ${MONTH_LABEL(months)}으로 정할까요?\n이미 기간이 지난 요청은 1분 안에 자동으로 영구 삭제됩니다.`)) return;
+  try {
+    await api('/api/settings', { method: 'POST', body: { retentionMonths: months } });
+    toast(months ? `보관 기간을 ${MONTH_LABEL(months)}으로 정했습니다.` : '자동 삭제를 껐습니다.');
+    loadRetention();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
 $('tsa-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
@@ -158,6 +195,7 @@ try {
   renderLink();
   renderMail();
   renderTsa();
+  await loadRetention();
 } catch (err) {
   toast(err.message, 'error');
 }
