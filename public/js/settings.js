@@ -14,7 +14,11 @@ function renderLink() {
   $('link-status').replaceChildren(h('div', { class: `result ${r.cls}`, style: { marginTop: 0 } },
     h('div', {}, '현재 서명 링크 주소: ', h('b', {}, data.current.publicBaseUrl)),
     h('div', {}, r.text),
-    data.fixedByServer ? h('div', { class: 'muted' }, '(서버 실행 옵션 PUBLIC_URL로 고정되어 있어 아래 값보다 우선합니다)') : null));
+    data.fixedByServer ? h('div', { class: 'muted' }, '(서버 실행 옵션 PUBLIC_URL로 고정되어 있어 아래 값보다 우선합니다)') : null,
+    data.current.temporary ? h('div', { class: 'muted' }, '(npm run start:public 의 인터넷 임시 주소입니다. 아래 값보다 우선하고, 서버를 다시 켜면 바뀝니다)') : null,
+    data.tunnel && data.tunnel.status !== 'up'
+      ? h('div', {}, data.tunnel.status === 'missing' ? '⚠ cloudflared가 없어 인터넷 공개 주소를 만들 수 없습니다.' : '⏳ 인터넷 공개 주소를 만드는 중… 잠시 뒤 새로고침하세요.')
+      : null));
   $('publicUrl').value = data.publicUrl;
   $('lan-urls').textContent = data.lanUrls.length ? `이 PC의 내부 주소: ${data.lanUrls.join(', ')}` : '';
 }

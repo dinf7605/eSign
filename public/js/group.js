@@ -81,7 +81,18 @@ function renderMail() {
 
   const notices = [];
   if (!m.configured) notices.push(h('div', { class: 'result bad', style: { marginTop: 0 } }, '메일 발송 계정이 없습니다. ', h('a', { href: '/settings.html' }, '설정에서 등록하기 →')));
-  if (REACH_MSG[reach]) {
+  const tunnel = group.link.tunnel;
+  if (group.link.temporary) {
+    notices.push(h('div', { class: 'result info', style: { marginTop: notices.length ? '8px' : 0 } },
+      '🌐 인터넷 임시 주소로 링크가 나갑니다: ', h('code', {}, group.link.base),
+      h('div', { class: 'small' }, '서명이 끝날 때까지 서버 창과 PC를 켜 두세요. 서버를 다시 켜면 주소가 바뀌어 이미 보낸 링크가 열리지 않으니, 다시 켠 뒤 "미서명자에게 다시 알림"을 누르세요.')));
+  } else if (tunnel && tunnel.status !== 'up') {
+    notices.push(h('div', { class: 'result bad', style: { marginTop: notices.length ? '8px' : 0 } },
+      tunnel.status === 'missing'
+        ? '인터넷 공개 모드인데 cloudflared 프로그램이 없습니다. 설치 후 서버를 다시 켜세요: winget install --id Cloudflare.cloudflared'
+        : `인터넷 공개 주소를 만드는 중이거나 끊겼습니다${tunnel.error ? ` (${tunnel.error})` : ''}. 잠시 뒤 새로고침하세요.`));
+  }
+  if (REACH_MSG[reach] && !(tunnel && reach === 'local')) {
     notices.push(h('div', { class: `result ${reach === 'local' ? 'bad' : 'info'}`, style: { marginTop: notices.length ? '8px' : 0 } },
       REACH_MSG[reach], ' 지금 링크: ', h('code', {}, group.link.base), ' ', h('a', { href: '/settings.html' }, '서명 링크 주소 설정 →')));
   }

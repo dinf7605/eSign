@@ -10,6 +10,7 @@ cd esign
 npm install
 npm start            # 이 PC에서만: http://localhost:3300
 npm run start:lan    # 같은 Wi-Fi의 교육생 휴대폰에서도 접속
+npm run start:public # 교육생이 집에서도 서명 (인터넷 임시 주소, cloudflared 필요)
 npm test             # 자동 테스트
 npm run mail-catcher # 연습용 가짜 메일 서버 (실제로 안 보내고 파일로 저장)
 ```
@@ -34,7 +35,7 @@ Gmail은 하루 약 500통까지 보낼 수 있습니다.
 | 상황 | 방법 |
 | --- | --- |
 | 교육장 안, 같은 Wi-Fi | `npm run start:lan`으로 실행. 주소는 자동(예: `http://192.168.0.12:3300`). Windows 방화벽 창이 뜨면 **개인 네트워크**만 허용 |
-| 집 등 어디서나 | 인터넷에서 열리는 주소가 필요합니다. ① HTTPS 서버(클라우드 등)에 이 프로그램을 올리거나, ② Cloudflare Tunnel 같은 터널로 이 PC를 임시 공개한 뒤 그 `https://…` 주소를 설정에 입력 |
+| 집 등 어디서나 | `npm run start:public`으로 실행. 아래 "집에서 서명받기" 참고 |
 
 주소가 `localhost`이면 메일 발송이 막힙니다(받은 사람이 열 수 없기 때문). 교육생 현황 화면에도 경고가 나옵니다.
 
@@ -46,6 +47,22 @@ Gmail은 하루 약 500통까지 보낼 수 있습니다.
 - 기본 주소: `http://timestamp.digicert.com` (무료). **연결 테스트**로 확인하세요. TSA로는 문서가 아니라 서명값의 해시만 전송됩니다.
 - 인터넷이 필요합니다. TSA가 응답하지 않으면(8초) **타임스탬프 없이 봉인**하고, 문서 기록에 "타임스탬프 실패"가 남습니다. 서명이 막히지는 않습니다.
 - 교육장에 인터넷이 없다면 꺼 두세요.
+
+### 집에서 서명받기 (`npm run start:public`)
+
+1. 처음 한 번 cloudflared 설치 (Cloudflare 공식 프로그램, 무료·계정 불필요):
+   ```
+   winget install --id Cloudflare.cloudflared
+   ```
+2. `npm run start:public` 실행 → 창에 `🌐 인터넷 공개 주소: https://xxxx.trycloudflare.com`이 뜨면 준비 완료.
+   메일 속 서명 링크가 자동으로 이 주소로 나갑니다(설정 화면의 주소보다 우선).
+3. 관리자 화면은 계속 **이 PC의 http://localhost:3300** 에서 씁니다. 인터넷 주소로는 **서명·문서 검증만** 열리고, 로그인·관리자 화면은 막혀 있습니다.
+4. **서명이 다 끝날 때까지 서버 창과 PC를 켜 두세요.** 절전 모드로 들어가지 않게 Windows 전원 설정을 확인하세요.
+
+주의할 점
+- 주소는 **실행할 때마다 바뀝니다.** 서버를 껐다 켰다면 이미 보낸 메일 링크는 열리지 않으니, 교육생 현황에서 **"미서명자에게 다시 알림"** 을 누르세요(새 주소로 다시 갑니다). 터널이 잠깐 끊겨 자동으로 다시 연결된 경우도 같습니다.
+- Cloudflare 임시 터널(trycloudflare)은 무료 체험용이라 가동 보장이 없습니다. 교육생이 아주 많거나 몇 주씩 열어 두려면 Cloudflare 계정의 고정 터널이나 HTTPS 서버를 쓰고, 그 주소를 `PUBLIC_URL` 또는 설정 화면에 넣으세요.
+- 감사 추적에는 터널 뒤의 **실제 교육생 IP**가 기록됩니다.
 
 ## 사용 순서
 
@@ -92,7 +109,8 @@ npm run mail-catcher
 - 담당자 화면은 로그인이 필요합니다(비밀번호 scrypt 해시, 5회 실패 시 1분 잠금). 비밀번호를 잊으면 서버를 끄고 `data/admin.json`을 지운 뒤 서버 PC에서 다시 설정하세요.
 - 서명 링크에는 추측할 수 없는 무작위 토큰이 들어 있고, 본인 확인 전에는 **누구의 링크인지·문서 내용이 보이지 않습니다**. 본인 확인 세션은 2시간 유지되며 그 사람 문서에만 쓸 수 있습니다.
 - 이름+전화번호 확인은 "링크를 우연히 받은 다른 사람"을 막는 수준입니다. 서로 전화번호를 아는 사이라면 대신 서명할 수 있으므로, 더 강한 확인이 필요하면 휴대폰 문자 인증(유료 서비스 연동)을 고려하세요.
-- `start:lan`·`http://` 주소는 암호화되지 않습니다. 외부 공개는 반드시 HTTPS 주소로 하세요.
+- `start:lan`·`http://` 주소는 암호화되지 않습니다. 외부 공개는 반드시 HTTPS 주소로 하세요(`start:public`은 HTTPS).
+- `start:public`(터널)로 들어온 요청은 관리자 로그인·관리자 API·처음 비밀번호 설정이 모두 막힙니다. 인터넷에는 서명 화면과 문서 검증만 보입니다.
 - 엑셀 명단은 모든 값을 텍스트로 저장해 수식이 실행되지 않고, 전화번호 앞 0도 유지됩니다.
 
 ## 백업
@@ -131,6 +149,7 @@ lib/finalize.js      서명·이름·날짜 삽입 + 감사 추적 인증서 + P
 lib/roster.js        서명자 명단 PDF / 엑셀
 lib/xlsx.js          엑셀(.xlsx) 작성기 (의존성 없음)
 lib/zip.js           ZIP 작성기 (한글 파일명)
+lib/tunnel.js        인터넷 공개 터널 (cloudflared quick tunnel) 실행·감시
 lib/seal-cert.js     봉인 인증서
 lib/cades.js         PAdES 서명 생성·검증 (B-B / B-T)
 lib/tsa.js           RFC 3161 타임스탬프 요청·검증
@@ -140,6 +159,7 @@ scripts/mail-catcher.js  연습용 가짜 메일 서버
 test/flow.test.js    전체 흐름 자동 테스트 16개 (실제 SMTP 발송, OpenSSL 서명 검증 포함)
 test/tsa.test.js     타임스탬프 자동 테스트 7개 (가짜 TSA, OpenSSL ts -verify, TSA 장애 시 B-B 대체)
 test/fake-tsa.js     테스트용 가짜 TSA 서버
+test/tunnel.test.js  인터넷 공개 모드 자동 테스트 9개 (관리자 차단, 실제 접속자 IP, 링크 주소)
 ```
 
 ## 아직 없는 것

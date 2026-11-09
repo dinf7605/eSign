@@ -57,11 +57,13 @@ const isFraction = (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
 function requestMeta(req) {
-  return { ip: req.ip || '', userAgent: String(req.get('user-agent') || '').slice(0, 300) };
+  return { ip: req.clientIp || req.ip || '', userAgent: String(req.get('user-agent') || '').slice(0, 300) };
 }
 
 /** 본인 확인용 비교: 공백 무시, 대소문자 무시 */
 const normalizeName = (s) => String(s || '').normalize('NFC').replace(/\s+/g, '').toLowerCase();
+
+const isLoopbackAddress = (ip) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip);
 
 /** 이 PC의 내부망 IPv4 주소 (교육생 휴대폰이 같은 Wi-Fi에서 접속할 주소) */
 function lanAddresses() {
@@ -275,6 +277,7 @@ function attachment(res, type, fileName) {
  * @param {number} [options.port]
  * @param {object} [options.mailTransport] 테스트용 메일 transport ({ sendMail })
  * @param {string} [options.tsaUrl] 타임스탬프 기관(TSA) 주소 고정 (설정 화면 값보다 우선)
+ * @param {() => {status: string, url: string|null, error: string|null}} [options.tunnel] 인터넷 공개 터널 상태 (npm run start:public)
  */
 function createApp({
   dataDir = path.join(__dirname, 'data'),
@@ -284,6 +287,7 @@ function createApp({
   port = 3300,
   mailTransport,
   tsaUrl = process.env.ESIGN_TSA_URL,
+  tunnel,
 } = {}) {
   const store = createStore(dataDir);
   const seal = loadOrCreateSeal(path.join(dataDir, 'keys'));
@@ -297,13 +301,36 @@ function createApp({
   const currentTsaUrl = () => tsaUrl || settings.tsaUrl();
   const tsaOption = (onResult) => (currentTsaUrl() ? { url: currentTsaUrl(), onResult } : undefined);
 
-  /** 서명 링크의 앞부분: 실행 옵션 > 설정 화면 > LAN 모드 > 지금 접속한 주소 */
+  /** 서명 링크의 앞부분: 실행 옵션 > 인터넷 공개 터널 > 설정 화면 > LAN 모드 > 지금 접속한 주소 */
+  const tunnelState = () => (tunnel ? tunnel() : null);
+  const tunnelUrl = () => (!publicUrl && tunnelState()?.status === 'up' ? tunnelState().url : null);
   const baseUrl = (req) => {
-    const fixed = publicUrl || settings.publicUrl();
+    const fixed = publicUrl || tunnelUrl() || settings.publicUrl();
     if (fixed) return fixed.replace(/\/+$/, '');
     const ip = lan && lanAddresses()[0];
     return ip ? `http://${ip}:${port}` : `${req.protocol}://${req.get('host')}`;
   };
+
+  // 터널(cloudflared)은 이 PC 안에서 서버로 접속하므로 원래 접속자 주소는 CF-Connecting-IP 헤더로 온다.
+  // 이 헤더는 Cloudflare가 항상 덮어쓰므로 인터넷 쪽에서 위조할 수 없다.
+  app.use((req, res, next) => {
+    const cf = req.get('cf-connecting-ip');
+    req.viaTunnel = isLoopbackAddress(req.socket.remoteAddress) && Boolean(cf);
+    req.clientIp = req.viaTunnel ? cf : req.ip;
+    next();
+  });
+
+  // 인터넷(터널)으로는 서명·문서 검증만 연다. 관리자 화면·API는 서버를 켠 PC(또는 같은 Wi-Fi)에서만.
+  const ADMIN_PAGES = new Set(['/', '/index.html', '/new.html', '/group.html', '/doc.html', '/settings.html', '/login.html']);
+  const ADMIN_API = ['/api/auth', '/api/documents', '/api/groups', '/api/server-info', '/api/settings'];
+  app.use((req, res, next) => {
+    if (!req.viaTunnel) return next();
+    if (ADMIN_API.some((p) => req.path === p || req.path.startsWith(`${p}/`))) {
+      return res.status(403).json({ error: '관리자 기능은 서버를 실행한 PC에서만 사용할 수 있습니다.', code: 'admin_local_only' });
+    }
+    if (ADMIN_PAGES.has(req.path)) return res.redirect(302, '/verify.html');
+    return next();
+  });
 
   app.use((req, res, next) => {
     res.set({
@@ -346,6 +373,7 @@ function createApp({
       publicUrlConfigured: Boolean(publicUrl || settings.publicUrl()),
       lanUrls: lanAddresses().map((ip) => `http://${ip}:${port}`),
       mailConfigured: mailer.configured(),
+      tunnel: tunnelState(),
     });
   });
 
@@ -356,7 +384,8 @@ function createApp({
       ...settings.view(),
       fixedByServer: Boolean(publicUrl),
       tsaFixedByServer: tsaUrl || '',
-      current: { publicBaseUrl: baseUrl(req), reach: reachability(baseUrl(req)) },
+      current: { publicBaseUrl: baseUrl(req), reach: reachability(baseUrl(req)), temporary: Boolean(tunnelUrl()) },
+      tunnel: tunnelState(),
       lanUrls: lanAddresses().map((ip) => `http://${ip}:${port}`),
     });
   });
@@ -519,7 +548,7 @@ function createApp({
         failed: members.filter((m) => m.emailStatus === 'failed').length,
         noEmail: members.filter((m) => !m.email).length,
       },
-      link: { base, reach: reachability(base) },
+      link: { base, reach: reachability(base), temporary: Boolean(tunnelUrl()) && base === tunnelUrl(), tunnel: tunnelState() },
     };
   }
 
@@ -772,7 +801,7 @@ function createApp({
     for (const [k, v] of signerSessions) if (v.expires < Date.now()) signerSessions.delete(k);
     const token = crypto.randomBytes(32).toString('base64url');
     signerSessions.set(token, { signerId: signer.id, expires: Date.now() + SIGNER_SESSION_MS });
-    res.setHeader('Set-Cookie', `${SIGNER_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/api/sign; Max-Age=${SIGNER_SESSION_MS / 1000}${req.secure ? '; Secure' : ''}`);
+    res.setHeader('Set-Cookie', `${SIGNER_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/api/sign; Max-Age=${SIGNER_SESSION_MS / 1000}${req.secure || req.viaTunnel ? '; Secure' : ''}`);
   }
 
   const findSigner = (req) => {
@@ -986,9 +1015,29 @@ if (require.main === module) {
   const port = Number(arg('port') || process.env.PORT) || 3300;
   const host = lan ? '0.0.0.0' : process.env.HOST || '127.0.0.1';
   const dataDir = path.resolve(arg('data') || process.env.ESIGN_DATA_DIR || path.join(__dirname, 'data'));
-  createApp({ lan, port, dataDir }).listen(port, host, () => {
+  const isPublic = process.argv.includes('--public');
+  let tunnel;
+  if (isPublic) {
+    const { startTunnel } = require('./lib/tunnel');
+    tunnel = startTunnel({
+      port,
+      onUrl: (url) => {
+        console.log(`🌐 인터넷 공개 주소: ${url}`);
+        console.log('   교육생 메일 속 서명 링크가 이 주소로 나갑니다. 서명이 끝날 때까지 이 창과 PC를 켜 두세요.');
+        console.log('   (서버를 다시 켜면 주소가 바뀝니다 → 교육생 현황에서 "미서명자에게 다시 알림")');
+      },
+    });
+    if (tunnel.state().status === 'missing') {
+      console.log('⚠ 인터넷 공개에 필요한 cloudflared 프로그램이 없습니다. 설치 후 다시 실행하세요:');
+      console.log('    winget install --id Cloudflare.cloudflared');
+    }
+  }
+  createApp({ lan, port, dataDir, tunnel: tunnel && tunnel.state }).listen(port, host, () => {
     console.log(`전자서명 서비스 실행 중 → http://localhost:${port}`);
-    if (lan) {
+    if (isPublic) {
+      console.log('  관리자 화면은 이 PC의 위 주소에서만 열립니다. 인터넷 주소로는 서명·문서 검증만 됩니다.');
+      if (tunnel.state().status !== 'missing') console.log('  인터넷 공개 주소를 만드는 중…');
+    } else if (lan) {
       for (const ip of lanAddresses()) console.log(`  같은 Wi-Fi의 휴대폰에서: http://${ip}:${port}`);
     } else {
       console.log('  (이 PC에서만 접속 가능 — 휴대폰으로 서명받으려면 npm run start:lan)');
