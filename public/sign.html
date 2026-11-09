@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>문서 서명 · e서명</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/sign.js"></script>
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <span class="logo">e<span>서명</span></span>
+    <span class="muted small" id="doc-title"></span>
+  </div></header>
+
+  <main class="container">
+    <div id="intro"><div class="loading">불러오는 중…</div></div>
+    <div class="pdf-pages" id="pages"></div>
+  </main>
+
+  <div class="bottombar" id="bar" hidden><div class="bottombar-inner">
+    <div class="grow">
+      <div><strong id="progress"></strong> <button type="button" class="btn btn-sm btn-ghost" id="next">다음 서명란으로 ↓</button></div>
+      <label class="consent"><input type="checkbox" id="consent"> <span id="consent-text"></span></label>
+    </div>
+    <button type="button" class="btn btn-primary btn-lg" id="submit" disabled>서명 제출</button>
+  </div></div>
+
+  <dialog id="pad-dialog">
+    <div class="dialog-body">
+      <h2 style="margin-bottom: 4px">서명하기</h2>
+      <p class="small muted" style="margin: 0 0 12px">아래 칸에 마우스나 손가락으로 서명해 주세요.</p>
+      <div class="pad-wrap">
+        <canvas id="pad"></canvas>
+        <div class="pad-line"></div>
+        <div class="pad-hint" id="pad-hint">여기에 서명</div>
+      </div>
+      <label class="consent small" id="apply-all-wrap" style="margin-top: 12px"><input type="checkbox" id="apply-all" checked> 모든 서명란에 같은 서명 적용</label>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn btn-ghost" id="pad-undo">되돌리기</button>
+      <button type="button" class="btn btn-ghost" id="pad-clear">지우기</button>
+      <span class="grow"></span>
+      <button type="button" class="btn" id="pad-cancel">취소</button>
+      <button type="button" class="btn btn-primary" id="pad-apply" disabled>적용</button>
+    </div>
+  </dialog>
+</body>
+</html>

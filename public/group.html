@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>교육생 서명 현황 · e서명</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/group.js"></script>
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="logo" href="/">e<span>서명</span></a>
+    <nav class="nav">
+      <a href="/" class="active">문서함</a>
+      <a href="/new.html">새 서명 요청</a>
+      <a href="/verify.html">문서 검증</a>
+      <a href="/settings.html">설정</a>
+    </nav>
+    <button type="button" class="btn btn-sm btn-ghost nav-logout" id="logout">로그아웃</button>
+  </div></header>
+
+  <main class="container">
+    <div id="head"><div class="loading">불러오는 중…</div></div>
+    <div id="mail"></div>
+
+    <div class="card">
+      <div class="row spread" style="margin-bottom: 12px">
+        <h2 style="margin: 0">교육생 <span id="count" class="muted small"></span></h2>
+        <div class="row" style="gap: 8px">
+          <input type="search" id="search" placeholder="이름·소속 검색" style="width: 150px">
+          <select id="filter">
+            <option value="all">전체</option>
+            <option value="pending">미서명</option>
+            <option value="signed">서명 완료</option>
+            <option value="mailfail">메일 실패</option>
+          </select>
+          <button type="button" class="btn btn-sm" id="copy-all">링크 전체 복사</button>
+          <button type="button" class="btn btn-sm" id="toggle-add">+ 교육생 추가</button>
+        </div>
+      </div>
+      <div id="add-box" class="add-box" hidden>
+        <textarea id="add-text" rows="4" placeholder="김추가	2반	010-0000-0000	kim@example.com&#10;(엑셀에서 이름·소속·전화번호·이메일 열을 복사해 붙여넣기)"></textarea>
+        <div class="row" style="margin-top: 8px">
+          <span class="small muted grow" id="add-preview"></span>
+          <button type="button" class="btn btn-primary btn-sm" id="add-submit">추가하기</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="members">
+          <thead><tr><th style="width: 44px">번호</th><th>교육생</th><th>서명</th><th>메일</th><th style="text-align: right">서명받기</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <dialog id="qr-dialog">
+    <div class="dialog-body" style="text-align: center">
+      <h2 id="qr-name" style="margin-bottom: 2px"></h2>
+      <p class="small muted" style="margin: 0 0 10px">휴대폰 카메라로 찍으면 서명 화면이 열립니다</p>
+      <img id="qr-img" alt="서명 링크 QR 코드" class="qr-img">
+      <input type="text" id="qr-link" readonly class="small" style="margin-top: 10px">
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" id="qr-copy">링크 복사</button>
+      <a class="btn" id="qr-here">이 기기에서 서명받기</a>
+      <span class="grow"></span>
+      <button type="button" class="btn btn-primary" id="qr-close">닫기</button>
+    </div>
+  </dialog>
+
+  <dialog id="edit-dialog">
+    <form id="edit-form">
+      <div class="dialog-body">
+        <h2>교육생 정보 수정</h2>
+        <p class="small muted" style="margin-top: -6px">본인 확인은 여기 적힌 <b>이름과 전화번호</b>로 합니다. 이메일을 바꾸면 메일을 다시 보내 주세요.</p>
+        <label class="field"><span>이름</span><input type="text" id="e-name" maxlength="50" required></label>
+        <label class="field"><span>소속</span><input type="text" id="e-org" maxlength="50"></label>
+        <label class="field"><span>전화번호</span><input type="text" id="e-phone" maxlength="30" inputmode="tel"></label>
+        <label class="field" style="margin-bottom: 0"><span>이메일</span><input type="email" id="e-email" maxlength="100"></label>
+      </div>
+      <div class="dialog-foot">
+        <button type="button" class="btn" id="edit-cancel">취소</button>
+        <button type="submit" class="btn btn-primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

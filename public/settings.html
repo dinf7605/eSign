@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>설정 · e서명</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/settings.js"></script>
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="logo" href="/">e<span>서명</span></a>
+    <nav class="nav">
+      <a href="/">문서함</a>
+      <a href="/new.html">새 서명 요청</a>
+      <a href="/verify.html">문서 검증</a>
+      <a href="/settings.html" class="active">설정</a>
+    </nav>
+    <button type="button" class="btn btn-sm btn-ghost nav-logout" id="logout">로그아웃</button>
+  </div></header>
+
+  <main class="container narrow">
+    <h1>설정</h1>
+    <p class="sub">교육생에게 메일을 보내려면 1·2번을 먼저 정해 주세요. 3번은 선택입니다.</p>
+
+    <form class="card" id="link-form">
+      <h2>1. 서명 링크 주소</h2>
+      <p class="small muted" style="margin-top: -6px">메일 속 "서명하기" 버튼이 열 주소입니다. <b>교육생이 있는 곳에서 열 수 있는 주소</b>여야 합니다.</p>
+      <div id="link-status" class="small" style="margin-bottom: 12px"></div>
+      <label class="field"><span>서명 링크 주소 (비우면 자동)</span>
+        <input type="text" id="publicUrl" placeholder="예: https://sign.우리회사.kr 또는 http://192.168.0.12:3300" maxlength="200"></label>
+      <details class="small help">
+        <summary>어떤 주소를 넣어야 하나요?</summary>
+        <ul>
+          <li><b>교육장 같은 Wi-Fi에서만 서명</b>: 서버를 <code>npm run start:lan</code>으로 켜면 자동으로 이 PC의 내부 주소가 쓰입니다. 비워 두세요.</li>
+          <li><b>집 등 외부에서 메일로 서명</b>: 인터넷에서 열리는 주소가 필요합니다. HTTPS 서버에 올리거나, Cloudflare Tunnel 같은 터널로 이 PC를 임시 공개한 뒤 그 주소(https://…)를 넣으세요.</li>
+        </ul>
+        <div id="lan-urls" class="muted"></div>
+      </details>
+      <button type="submit" class="btn btn-primary">저장</button>
+    </form>
+
+    <form class="card" id="mail-form" autocomplete="off">
+      <h2>2. 메일 발송 계정</h2>
+      <p class="small muted" style="margin-top: -6px">이 계정으로 교육생에게 서명 요청 메일이 나갑니다.</p>
+      <div id="mail-status" class="small" style="margin-bottom: 12px"></div>
+      <label class="field"><span>메일 서비스</span><select id="preset" style="width: 100%"></select></label>
+      <p id="preset-help" class="small help-box"></p>
+      <div class="grid-2" id="smtp-fields">
+        <label class="field"><span>SMTP 서버</span><input type="text" id="host" placeholder="smtp.gmail.com"></label>
+        <label class="field"><span>포트</span><input type="text" id="port" inputmode="numeric" placeholder="465"></label>
+        <label class="field"><span>보안 방식</span>
+          <select id="security" style="width: 100%">
+            <option value="ssl">SSL/TLS (보통 465)</option>
+            <option value="starttls">STARTTLS (보통 587)</option>
+            <option value="none">없음 (사내 테스트용)</option>
+          </select></label>
+      </div>
+      <label class="field"><span>메일 계정 (아이디 또는 이메일)</span><input type="text" id="user" placeholder="you@gmail.com" autocomplete="off"></label>
+      <label class="field"><span>비밀번호 / 앱 비밀번호</span><input type="password" id="pass" autocomplete="new-password" placeholder=""></label>
+      <div class="grid-2">
+        <label class="field"><span>보내는 사람 이름</span><input type="text" id="fromName" placeholder="코디세이 운영팀" maxlength="50"></label>
+        <label class="field"><span>보내는 사람 이메일 (비우면 계정과 같음)</span><input type="email" id="fromEmail" placeholder="you@gmail.com"></label>
+      </div>
+      <div class="row">
+        <button type="submit" class="btn btn-primary">저장</button>
+      </div>
+      <hr class="divider">
+      <div class="row">
+        <input type="email" id="test-to" placeholder="테스트 메일 받을 주소" style="flex: 1; min-width: 200px">
+        <button type="button" class="btn" id="test-send">테스트 메일 보내기</button>
+      </div>
+      <p class="small muted" style="margin-bottom: 0">비밀번호는 이 PC의 <code>data/settings.json</code>에만 저장되며 화면으로 다시 보내지 않습니다.</p>
+    </form>
+    <form class="card" id="tsa-form">
+      <h2>3. 타임스탬프 (선택)</h2>
+      <p class="small muted" style="margin-top: -6px">서명 완료 PDF에 <b>공인 시각 확인 기관(TSA)</b>의 타임스탬프를 붙입니다. 서명 시각을 이 PC의 시계가 아니라 외부 기관이 증명해 주므로, 나중에 "언제 서명했는지"를 다툴 때 더 강한 증거가 됩니다 (PAdES B-T).</p>
+      <div id="tsa-status" class="small" style="margin-bottom: 12px"></div>
+      <label class="consent small" style="margin-bottom: 12px"><input type="checkbox" id="tsa-enabled"> <span><b>타임스탬프 사용</b> — 서명 완료·명단 PDF를 만들 때마다 인터넷으로 TSA에 요청합니다. 실패하면 타임스탬프 없이 봉인하고 기록을 남깁니다.</span></label>
+      <label class="field"><span>TSA 주소</span><input type="text" id="tsa-url" maxlength="300" placeholder="http://timestamp.digicert.com"></label>
+      <p class="small muted" style="margin-top: -6px">무료 공용 TSA 예: <code>http://timestamp.digicert.com</code>, <code>http://timestamp.sectigo.com</code>. 서버로는 문서 내용이 아니라 <b>서명값의 해시(지문)만</b> 전송됩니다.</p>
+      <div class="row">
+        <button type="submit" class="btn btn-primary">저장</button>
+        <button type="button" class="btn" id="tsa-test">연결 테스트</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>

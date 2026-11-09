@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>문서 검증 · e서명</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/verify.js"></script>
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="logo" href="/">e<span>서명</span></a>
+    <nav class="nav">
+      <a href="/">문서함</a>
+      <a href="/new.html">새 서명 요청</a>
+      <a href="/verify.html" class="active">문서 검증</a>
+    </nav>
+  </div></header>
+
+  <main class="container narrow">
+    <h1>문서 검증</h1>
+    <p class="sub">서명 완료 PDF를 올리면 ① PDF 안의 전자서명과 ② 등록된 문서 지문(SHA-256)을 함께 확인합니다.<br>
+      <span class="small">전자서명 검사를 위해 파일을 서버로 잠시 보내지만 저장하지 않고 검사 후 바로 버립니다.</span></p>
+    <div class="card">
+      <label class="dropzone" id="drop">
+        <input type="file" id="file" accept="application/pdf,.pdf">
+        <strong>검증할 PDF를 끌어다 놓거나 클릭해서 선택</strong>
+      </label>
+      <div id="result"></div>
+    </div>
+    <div class="card">
+      <h2>Adobe Acrobat Reader에서 확인하기</h2>
+      <p class="small" style="margin-top: 0">서명 완료 PDF를 Acrobat Reader로 열면 상단에 서명 정보가 표시됩니다.
+        지금은 <b>자체 발급 인증서</b>라서 처음에는 "서명자 신원을 알 수 없음"으로 나옵니다. 아래 루트 인증서를 한 번 신뢰로 등록하면 초록색 체크로 바뀝니다.</p>
+      <ol class="small" style="padding-left: 20px; margin: 0 0 14px">
+        <li>서명 완료 PDF를 열고 <b>서명 패널</b>에서 서명을 오른쪽 클릭 → <b>서명 속성 표시</b></li>
+        <li><b>서명자 인증서 표시</b> → 인증서 목록에서 맨 위 <b>e서명 루트 CA</b> 선택</li>
+        <li><b>신뢰</b> 탭 → <b>신뢰할 수 있는 인증서에 추가</b> → "인증된 문서" 신뢰에 체크 후 확인</li>
+      </ol>
+      <div class="row">
+        <a class="btn" href="/api/seal/ca.crt">루트 인증서 내려받기 (.crt)</a>
+        <span class="small muted mono" id="ca-fp"></span>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

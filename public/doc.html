@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>문서 상세 · e서명</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/doc.js"></script>
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="logo" href="/">e<span>서명</span></a>
+    <nav class="nav">
+      <a href="/" class="active">문서함</a>
+      <a href="/new.html">새 서명 요청</a>
+      <a href="/verify.html">문서 검증</a>
+      <a href="/settings.html">설정</a>
+    </nav>
+    <button type="button" class="btn btn-sm btn-ghost nav-logout" id="logout">로그아웃</button>
+  </div></header>
+
+  <main class="container">
+    <div id="content"><div class="loading">불러오는 중…</div></div>
+    <div class="card" id="preview-card" hidden>
+      <h2 id="preview-title">문서 미리보기</h2>
+      <div class="pdf-pages" id="pages"></div>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>새 서명 요청 · e서명</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/new.js"></script>
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="logo" href="/">e<span>서명</span></a>
+    <nav class="nav">
+      <a href="/">문서함</a>
+      <a href="/new.html" class="active">새 서명 요청</a>
+      <a href="/verify.html">문서 검증</a>
+      <a href="/settings.html">설정</a>
+    </nav>
+    <button type="button" class="btn btn-sm btn-ghost nav-logout" id="logout">로그아웃</button>
+  </div></header>
+
+  <main class="container">
+    <h1>새 서명 요청</h1>
+    <p class="sub">PDF를 올리고, 누가 서명할지와 서명 위치를 정하면 사람마다 서명 링크가 만들어집니다.</p>
+
+    <div class="segmented" role="tablist" id="mode">
+      <button type="button" role="tab" data-mode="group" class="active">
+        <strong>교육생 일괄 서명</strong><span>같은 문서를 1인 1부씩 · 서명부 출력</span>
+      </button>
+      <button type="button" role="tab" data-mode="multi">
+        <strong>한 문서에 여러 명</strong><span>계약서처럼 한 부에 함께 서명</span>
+      </button>
+    </div>
+
+    <section id="upload" class="card">
+      <label class="dropzone" id="drop">
+        <input type="file" id="file" accept="application/pdf,.pdf">
+        <strong>PDF 파일을 끌어다 놓거나 클릭해서 선택</strong>
+        <span class="small" style="margin-top: 6px">예: 개인정보 동의서, 서약서, 교육 이수 확인서 · 최대 15MB</span>
+      </label>
+      <p id="file-name" class="small muted" style="margin: 10px 0 0" hidden></p>
+    </section>
+
+    <section id="editor" class="editor" hidden>
+      <aside class="editor-side">
+        <div class="card">
+          <label class="field"><span id="title-label">교육명 (서명부 제목)</span><input type="text" id="title" maxlength="100" placeholder="예: 2026 코디세이 1기 개인정보 동의서"></label>
+          <label class="field" data-only="group" style="margin-bottom: 0"><span>교육 정보 (서명부 상단에 표시 · 선택)</span>
+            <textarea id="info" rows="3" maxlength="500" placeholder="일시: 2026. 11. 10.(화) 14:00&#10;장소: 3층 강의실&#10;강사: 홍길동"></textarea></label>
+        </div>
+
+        <div class="card" data-only="group">
+          <h2>1. 교육생 명단</h2>
+          <p class="small muted" style="margin-top: -6px">엑셀에서 <b>이름 · 소속 · 전화번호 · 이메일</b> 열을 복사해 붙여넣거나, 한 줄에 한 명씩 입력하세요. 열 순서는 자유이고 소속은 선택입니다.</p>
+          <textarea id="members" rows="7" placeholder="김교육	1반	010-1234-5678	kim@example.com&#10;이수강	1반	010-2222-3333	lee@example.com&#10;박서명, 2반, 010-4444-5555, park@example.com"></textarea>
+          <div id="members-preview" class="small muted" style="margin-top: 8px"></div>
+          <label class="consent small" style="margin-top: 12px">
+            <input type="checkbox" id="require-verification" checked>
+            <span><b>본인 확인 사용 (권장)</b> — 서명 전에 이름 + 전화번호가 명단과 일치해야 문서가 열립니다. 이 경우 전화번호가 꼭 필요합니다.</span>
+          </label>
+        </div>
+
+        <div class="card" data-only="multi">
+          <h2>1. 서명자</h2>
+          <div id="signers"></div>
+          <button type="button" class="btn btn-sm" id="add-signer">+ 서명자 추가</button>
+        </div>
+
+        <div class="card">
+          <h2>2. 서명란 배치</h2>
+          <p class="small muted" style="margin-top: -6px">종류를 고른 뒤 <b>문서 위를 클릭</b>하세요. 드래그로 옮기고, 오른쪽 아래 모서리로 크기를 바꿉니다.
+            <b>이름·날짜</b>는 서명할 때 자동으로 채워집니다.</p>
+          <div class="chips" id="types"></div>
+          <div data-only="multi" style="margin-top: 12px">
+            <div class="small muted" style="margin-bottom: 6px">누구의 칸인가요?</div>
+            <div class="chips" id="chips"></div>
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary btn-lg" id="submit" style="width: 100%">서명 요청 만들기</button>
+      </aside>
+      <div class="pdf-pages" id="pages"></div>
+    </section>
+  </main>
+</body>
+</html>

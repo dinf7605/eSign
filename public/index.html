@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>문서함 · e서명</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/index.js"></script>
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="logo" href="/">e<span>서명</span></a>
+    <nav class="nav">
+      <a href="/" class="active">문서함</a>
+      <a href="/new.html">새 서명 요청</a>
+      <a href="/verify.html">문서 검증</a>
+      <a href="/settings.html">설정</a>
+    </nav>
+    <button type="button" class="btn btn-sm btn-ghost nav-logout" id="logout">로그아웃</button>
+  </div></header>
+
+  <main class="container">
+    <div class="row spread" style="margin-bottom: 20px">
+      <div>
+        <h1>문서함</h1>
+        <p class="sub" style="margin: 0">서명 요청과 진행 상황을 확인하세요.</p>
+      </div>
+      <a class="btn btn-primary btn-lg" href="/new.html">+ 새 서명 요청</a>
+    </div>
+
+    <h2>교육생 일괄 서명 <span class="small muted">(1인 1부 · 서명부 출력)</span></h2>
+    <div class="card table-card">
+      <table>
+        <thead><tr><th>교육명 / 문서</th><th>진행</th><th class="hide-sm">요청일</th></tr></thead>
+        <tbody id="groups"><tr><td colspan="3" class="empty">불러오는 중…</td></tr></tbody>
+      </table>
+    </div>
+
+    <h2 style="margin-top: 28px">개별 문서 <span class="small muted">(한 문서에 여러 명 서명)</span></h2>
+    <div class="card table-card">
+      <table>
+        <thead><tr><th>문서 제목</th><th>상태</th><th>서명 진행</th><th class="hide-sm">요청일</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="4" class="empty">불러오는 중…</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>
