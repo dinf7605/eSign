@@ -62,28 +62,6 @@ export function localPath(value) {
   }
 }
 
-/** 엑셀에서 복사한 명단(탭/쉼표 구분)을 교육생 목록으로 바꾼다. 열: 이름, 소속, 연락처/이메일 (순서 자유) */
-export function parseMemberList(text) {
-  const rows = String(text || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => (line.includes('\t') ? line.split('\t') : line.split(/\s*,\s*/)).map((c) => c.trim().replace(/^"|"$/g, '')));
-  if (rows[0] && /^(이름|성명|name)$/i.test(rows[0][0])) rows.shift(); // 머리글 줄
-  return rows
-    .filter((cols) => cols[0])
-    .map(([name, ...rest]) => {
-      const m = { name };
-      for (const c of rest) {
-        if (!c) continue;
-        if (c.includes('@')) m.email ||= c;
-        else if (/^[0-9+\-()\s]{7,}$/.test(c)) m.phone ||= c;
-        else m.org ||= c;
-      }
-      return m;
-    });
-}
-
 // 상단 메뉴의 로그아웃 버튼
 document.getElementById('logout')?.addEventListener('click', async () => {
   await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});

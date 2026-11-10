@@ -180,6 +180,28 @@ dialog {
   box-shadow: 0 20px 60px rgba(10, 20, 50, 0.35);
 }
 dialog::backdrop { background: rgba(15, 22, 40, 0.5); }
+
+/* ── 교육생 명단 입력 (새 서명 요청) ── */
+.roster-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.roster-mini { list-style: none; margin: 6px 0 4px; padding: 0; }
+.roster-mini li { padding: 3px 0; border-bottom: 1px dashed var(--border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+dialog.roster-dialog { width: min(920px, calc(100vw - 24px)); }
+.roster-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.roster-count { margin-left: auto; font-weight: 600; }
+.roster-wrap { max-height: min(55vh, 520px); overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.roster-table { min-width: 640px; }
+.roster-table th { position: sticky; top: 0; z-index: 1; background: #f7f9fd; padding: 8px 6px; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.roster-table td { padding: 3px 4px; }
+.roster-table th[data-col="name"] { width: 20%; }
+.roster-table th[data-col="org"] { width: 16%; }
+.roster-table th[data-col="phone"] { width: 22%; }
+.roster-table .roster-no { width: 44px; text-align: center; color: var(--muted); font-size: 12.5px; }
+.roster-table .roster-del { width: 40px; text-align: center; }
+.roster-table .roster-del .btn { padding: 4px 8px; }
+.roster-table input { padding: 7px 8px; font-size: 14px; border-radius: 6px; }
+.roster-table input.invalid { border-color: var(--danger); background: #fff6f6; }
+.roster-foot { align-items: center; }
+.roster-problem { margin-right: auto; color: var(--danger); }
 .dialog-body { padding: 22px; }
 .pad-wrap { border: 1.5px solid var(--border); border-radius: 10px; background: #fff; position: relative; }
 .pad-wrap canvas { display: block; width: 100%; height: 200px; touch-action: none; cursor: crosshair; }
@@ -255,7 +277,6 @@ table.members td.actions .btn { margin: 2px 0 2px 4px; }
 table.members td:nth-child(2) { min-width: 120px; }
 table.members td:nth-child(3) { min-width: 100px; }
 table.members td:nth-child(3) .badge, table.members td:nth-child(4) .badge { white-space: nowrap; }
-.add-box { background: #f7f9fd; border: 1px dashed #c8d1e3; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
 .qr-img { width: 260px; height: 260px; max-width: 100%; image-rendering: pixelated; border: 1px solid var(--border); border-radius: 8px; }
 .warn-card { background: #fff8e8; border-color: #f3dca8; }
 

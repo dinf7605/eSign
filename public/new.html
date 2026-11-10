@@ -57,9 +57,13 @@
 
         <div class="card" data-only="group">
           <h2>1. 교육생 명단</h2>
-          <p class="small muted" style="margin-top: -6px">엑셀에서 <b>이름 · 소속 · 전화번호 · 이메일</b> 열을 복사해 붙여넣거나, 한 줄에 한 명씩 입력하세요. 열 순서는 자유이고 소속은 선택입니다.</p>
-          <textarea id="members" rows="7" placeholder="김교육	1반	010-1234-5678	kim@example.com&#10;이수강	1반	010-2222-3333	lee@example.com&#10;박서명, 2반, 010-4444-5555, park@example.com"></textarea>
-          <div id="members-preview" class="small muted" style="margin-top: 8px"></div>
+          <p class="small muted" style="margin-top: -6px"><b>이름 · 소속 · 전화번호 · 이메일</b>을 칸마다 나눠 입력하거나 CSV 파일로 불러오세요. 소속은 선택입니다.</p>
+          <div class="roster-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="roster-open">✎ 명단 입력</button>
+            <button type="button" class="btn btn-sm" id="roster-csv">📂 CSV 불러오기</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="roster-template">CSV 양식 받기</button>
+          </div>
+          <div id="members-preview" class="small muted" style="margin-top: 10px"></div>
           <label class="consent small" style="margin-top: 12px">
             <input type="checkbox" id="require-verification" checked>
             <span><b>본인 확인 사용 (권장)</b> — 서명 전에 이름 + 전화번호가 명단과 일치해야 문서가 열립니다. 이 경우 전화번호가 꼭 필요합니다.</span>

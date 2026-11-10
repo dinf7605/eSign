@@ -1,4 +1,5 @@
-import { api, h, fmtDate, toast, copyText, parseMemberList, deadlineInput, fmtDeadline, dDay, confirmDelete } from './common.js';
+import { api, h, fmtDate, toast, copyText, deadlineInput, fmtDeadline, dDay, confirmDelete } from './common.js';
+import { createRosterEditor } from './roster-editor.js';
 
 const params = new URLSearchParams(location.search);
 const id = params.get('id') || '';
@@ -323,29 +324,24 @@ async function cancel(m) {
   }
 }
 
-$('toggle-add').addEventListener('click', () => {
-  $('add-box').hidden = !$('add-box').hidden;
-  if (!$('add-box').hidden) $('add-text').focus();
+// 교육생 추가: 새 서명 요청과 같은 명단 표 (칸 나눠 입력·엑셀 붙여넣기·CSV)
+const addRoster = createRosterEditor({
+  title: '교육생 추가',
+  submitLabel: '추가하기',
+  requirePhone: () => Boolean(group?.requireVerification),
+  onSubmit: async (members) => {
+    try {
+      group = await api(`${base}/members`, { method: 'POST', body: { members } });
+      toast(`${members.length}명을 추가했습니다. 메일 보내기를 눌러 링크를 보내세요.`);
+      load();
+      return true;
+    } catch (err) {
+      toast(err.message, 'error');
+      return false;
+    }
+  },
 });
-$('add-text').addEventListener('input', () => {
-  const list = parseMemberList($('add-text').value);
-  $('add-preview').textContent = list.length ? `${list.length}명 인식: ${list.slice(0, 4).map((m) => m.name).join(', ')}${list.length > 4 ? ' …' : ''}` : '';
-});
-$('add-submit').addEventListener('click', async () => {
-  const members = parseMemberList($('add-text').value);
-  if (!members.length) return toast('추가할 교육생을 입력해 주세요.', 'error');
-  try {
-    group = await api(`${base}/members`, { method: 'POST', body: { members } });
-    $('add-text').value = '';
-    $('add-preview').textContent = '';
-    $('add-box').hidden = true;
-    toast(`${members.length}명을 추가했습니다. 메일 보내기를 눌러 링크를 보내세요.`);
-    load();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-  return undefined;
-});
+$('toggle-add').addEventListener('click', () => addRoster.open());
 
 $('copy-all').addEventListener('click', () => {
   const pending = group.members.filter((m) => !m.signed);

@@ -1,5 +1,6 @@
-import { api, h, COLORS, FIELD_TYPES, isInputType, toast, fmtDate, bytesToBase64, placeBox, hexToRgba, parseMemberList, deadlineInput } from './common.js';
+import { api, h, COLORS, FIELD_TYPES, isInputType, toast, fmtDate, bytesToBase64, placeBox, hexToRgba, deadlineInput } from './common.js';
 import { renderPdf } from './pdfview.js';
+import { createRosterEditor } from './roster-editor.js';
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const MAX_SIGNERS = 10;
@@ -146,7 +147,7 @@ async function useTemplate(id) {
     renderAll();
     renderMembersPreview();
     toast(t.mode === 'group' ? `템플릿을 불러왔습니다. 교육명을 고치고 명단을 넣어 주세요.` : '템플릿을 불러왔습니다. 서명자 이름을 넣어 주세요.');
-    (t.mode === 'group' ? $('members') : $('signers').querySelector('input'))?.focus({ preventScroll: true });
+    (t.mode === 'group' ? $('roster-open') : $('signers').querySelector('input'))?.focus({ preventScroll: true });
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -208,13 +209,23 @@ $('save-template').addEventListener('click', async () => {
 
 // ───── 2-A) 교육생 명단 ─────
 const phoneOk = (p) => String(p || '').replace(/\D/g, '').length >= 9;
+const roster = createRosterEditor({
+  requirePhone: () => $('require-verification').checked,
+  onChange: () => renderMembersPreview(),
+});
+$('roster-open').addEventListener('click', () => roster.open());
+$('roster-csv').addEventListener('click', () => roster.pickFile());
+$('roster-template').addEventListener('click', () => roster.downloadTemplate());
+
 function renderMembersPreview() {
-  state.members = parseMemberList($('members').value);
+  state.members = roster.members();
   const preview = $('members-preview');
+  $('roster-open').textContent = state.members.length ? `✎ 명단 보기·고치기 (${state.members.length}명)` : '✎ 명단 입력';
   if (state.members.length === 0) {
-    preview.textContent = '';
+    preview.textContent = '아직 입력한 교육생이 없습니다.';
     return;
   }
+  const bad = roster.problems().filter((p) => !p.message.includes('본인 확인')); // 전화번호 없음은 아래 줄에서 이름과 함께 알림
   const names = state.members.map((m) => m.name);
   const dupes = [...new Set(names.filter((n, i) => names.indexOf(n) !== i))];
   const noPhone = state.members.filter((m) => !phoneOk(m.phone)).map((m) => m.name);
@@ -223,14 +234,17 @@ function renderMembersPreview() {
   const list = (arr) => `${arr.slice(0, 5).join(', ')}${arr.length > 5 ? ` 외 ${arr.length - 5}명` : ''}`;
   preview.replaceChildren(...[
     h('b', { style: { color: state.members.length > MAX_MEMBERS ? 'var(--danger)' : 'var(--text)' } }, `${state.members.length}명`),
-    ` 인식: ${state.members.slice(0, 3).map((m) => [m.name, m.phone, m.email].filter(Boolean).join(' / ')).join(', ')}${state.members.length > 3 ? ' …' : ''}`,
+    h('ul', { class: 'roster-mini' },
+      ...state.members.slice(0, 5).map((m) => h('li', {}, [m.name || '(이름 없음)', m.org, m.phone, m.email].filter(Boolean).join(' · '))),
+      state.members.length > 5 ? h('li', {}, `… 외 ${state.members.length - 5}명`) : null),
+    bad.length ? h('div', { style: { color: 'var(--danger)' } }, `✖ 확인할 줄 ${bad.length}개: ${bad.slice(0, 3).map((p) => `${p.row}번째 줄 ${p.message}`).join(', ')}`) : null,
     verify && noPhone.length ? h('div', { style: { color: 'var(--danger)' } }, `✖ 전화번호 없음 ${noPhone.length}명: ${list(noPhone)} — 본인 확인에 필요합니다`) : null,
     noEmail.length ? h('div', { style: { color: 'var(--warn)' } }, `⚠ 이메일 없음 ${noEmail.length}명: ${list(noEmail)} — 이 사람들은 QR·링크·현장 서명으로 받으세요`) : null,
     dupes.length ? h('div', { style: { color: 'var(--warn)' } }, `⚠ 같은 이름이 있습니다: ${dupes.join(', ')} (전화번호로 구분됩니다)`) : null,
   ].filter(Boolean));
 }
-$('members').addEventListener('input', renderMembersPreview);
-$('require-verification').addEventListener('change', renderMembersPreview);
+$('require-verification').addEventListener('change', () => { roster.refresh(); renderMembersPreview(); });
+renderMembersPreview();
 
 // ───── 2-B) 서명자 (한 문서에 여러 명) ─────
 function renderSigners() {
@@ -414,10 +428,14 @@ function validate() {
   if (!state.pdfBase64) return 'PDF 파일을 먼저 올려 주세요.';
   if (!$('title').value.trim()) { $('title').focus(); return state.mode === 'group' ? '교육명을 입력해 주세요.' : '문서 제목을 입력해 주세요.'; }
   if (state.mode === 'group') {
-    if (state.members.length === 0) { $('members').focus(); return '교육생 명단을 입력해 주세요.'; }
+    if (state.members.length === 0) { roster.open(); return '교육생 명단을 입력해 주세요.'; }
     if (state.members.length > MAX_MEMBERS) return `한 번에 ${MAX_MEMBERS}명까지 등록할 수 있습니다. 나머지는 만든 뒤 "교육생 추가"로 넣어 주세요.`;
-    const noPhone = state.members.find((m) => !phoneOk(m.phone));
-    if ($('require-verification').checked && noPhone) return `${noPhone.name} 님의 전화번호가 없습니다. 본인 확인에 필요해요. (본인 확인을 끄면 없어도 됩니다)`;
+    const bad = roster.problems()[0];
+    if (bad) {
+      roster.showProblems();
+      const who = bad.name ? `${bad.name} 님(${bad.row}번째 줄)` : `${bad.row}번째 줄`;
+      return `명단 ${who}: ${bad.message}${bad.message.includes('본인 확인') ? ' (본인 확인을 끄면 없어도 됩니다)' : ''}`;
+    }
     if (!state.fields.some((f) => f.type === 'signature')) return '문서 위에 "✍ 서명" 칸을 1개 이상 놓아 주세요.';
     const due = deadline.value().deadline;
     if (due && new Date(due).getTime() <= Date.now()) return '서명 기한은 지금보다 뒤로 정해 주세요.';
