@@ -1436,7 +1436,14 @@ function createApp({
     const pdf = Buffer.from(req.body.pdfBase64, 'base64');
     if (pdf.length === 0 || !pdf.subarray(0, 1024).includes('%PDF-')) fail(400, 'PDF 파일이 아닙니다.');
     if (pdf.length > MAX_PDF_BYTES + 1024 * 1024) fail(413, '파일이 너무 큽니다.');
-    res.json(verifyPdfSignatures(pdf, seal.trustedCaPems));
+    let result;
+    try {
+      result = verifyPdfSignatures(pdf, seal.trustedCaPems);
+    } catch (err) {
+      if (err.code === 'too_many_signatures') fail(400, err.message, err.code);
+      throw err;
+    }
+    res.json(result);
   });
 
   app.use('/api', (req, res) => res.status(404).json({ error: '없는 API입니다.' }));
