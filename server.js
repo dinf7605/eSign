@@ -2,6 +2,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { domainToASCII } = require('url');
 const crypto = require('crypto');
 const express = require('express');
 const QRCode = require('qrcode');
@@ -394,7 +395,8 @@ function createApp({
     const host = m[1].replace(/\.$/, '');
     if (host.startsWith('[') || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return true;
     if (host === 'localhost' || host.endsWith('.localhost')) return true;
-    const machine = os.hostname().toLowerCase();
+    // 한글 등 PC 이름은 브라우저가 퓨니코드(xn--…)로 바꿔 보내므로 같은 형태로 비교
+    const machine = domainToASCII(os.hostname()) || os.hostname().toLowerCase();
     if (host === machine || host === `${machine}.local`) return true;
     return [publicUrl, tunnelUrl(), settings.publicUrl()].some((u) => u && hostnameOf(u) === host);
   }

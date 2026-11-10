@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
+const { domainToASCII } = require('url');
 const { createApp } = require('../server');
 
 async function withServer(options, fn) {
@@ -50,7 +51,7 @@ test('Host에 userinfo·이상한 문자를 섞어도 거절', () => withServer(
 }));
 
 test('localhost·IP 주소·이 PC 이름·설정한 서명 링크 주소는 허용', () => withServer({ publicUrl: 'https://sign.example.com' }, async (call, port) => {
-  const hosts = [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, `192.168.0.10:${port}`, os.hostname(), 'sign.example.com', 'LOCALHOST'];
+  const hosts = [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, `192.168.0.10:${port}`, domainToASCII(os.hostname()), 'sign.example.com', 'LOCALHOST'];
   for (const host of hosts) {
     assert.equal((await call('/api/auth/status', { host })).status, 200, host);
   }
