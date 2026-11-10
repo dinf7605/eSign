@@ -74,6 +74,12 @@ function requestMeta(req) {
 const normalizeName = (s) => String(s || '').normalize('NFC').replace(/\s+/g, '').toLowerCase();
 
 const isLoopbackAddress = (ip) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip);
+const plainIp = (ip) => String(ip || '').replace(/^::ffff:/, '');
+
+/** 이 PC에 붙은 모든 IP 주소 (서버 PC가 자기 LAN 주소로 접속했는지 알아보는 데 쓴다) */
+function ownAddresses() {
+  return Object.values(os.networkInterfaces()).flat().filter(Boolean).map((a) => plainIp(a.address));
+}
 
 /** 이 PC의 내부망 IPv4 주소 (교육생 휴대폰이 같은 Wi-Fi에서 접속할 주소) */
 function lanAddresses() {
@@ -322,6 +328,7 @@ function attachment(res, type, fileName) {
  * @param {object} [options.mailTransport] 테스트용 메일 transport ({ sendMail })
  * @param {string} [options.tsaUrl] 타임스탬프 기관(TSA) 주소 고정 (설정 화면 값보다 우선)
  * @param {() => {status: string, url: string|null, error: string|null}} [options.tunnel] 인터넷 공개 터널 상태 (npm run start:public)
+ * @param {() => string[]} [options.serverAddresses] 이 PC의 IP 주소 목록 (테스트용 — 기본은 네트워크 카드 주소 전부)
  */
 function createApp({
   dataDir = path.join(__dirname, 'data'),
@@ -332,6 +339,7 @@ function createApp({
   mailTransport,
   tsaUrl = process.env.ESIGN_TSA_URL,
   tunnel,
+  serverAddresses = ownAddresses,
   clock = () => Date.now(),
   reminderIntervalMs = 60 * 1000,
 } = {}) {
@@ -362,23 +370,28 @@ function createApp({
 
   // 터널(cloudflared)은 이 PC 안에서 서버로 접속하므로 원래 접속자 주소는 CF-Connecting-IP 헤더로 온다.
   // 이 헤더는 Cloudflare가 항상 덮어쓰므로 인터넷 쪽에서 위조할 수 없다.
+  // req.fromServerPc: 서버를 켠 PC에서 직접 연 요청 (localhost 또는 이 PC의 LAN 주소, 터널 제외).
+  // 접속자 주소는 TCP 연결의 실제 주소라 다른 기기가 위조할 수 없다.
   app.use((req, res, next) => {
     const cf = req.get('cf-connecting-ip');
-    req.viaTunnel = isLoopbackAddress(req.socket.remoteAddress) && Boolean(cf);
+    const remote = req.socket.remoteAddress;
+    req.viaTunnel = isLoopbackAddress(remote) && Boolean(cf);
     req.clientIp = req.viaTunnel ? cf : req.ip;
+    req.fromServerPc = !req.viaTunnel && (isLoopbackAddress(remote) || serverAddresses().includes(plainIp(remote)));
     next();
   });
 
-  // 인터넷(터널)으로는 서명·문서 검증만 연다. 관리자 화면·API는 서버를 켠 PC(또는 같은 Wi-Fi)에서만.
+  // 다른 기기(같은 Wi-Fi·인터넷 터널)에는 서명·문서 검증만 연다. 관리자 화면·API는 서버를 켠 PC에서만.
+  // LAN 모드는 http:// 라서, 다른 기기에서 로그인하면 같은 Wi-Fi의 누구나 비밀번호·로그인 쿠키를 엿볼 수 있다.
   const ADMIN_PAGES = new Set(['/', '/index.html', '/new.html', '/group.html', '/doc.html', '/settings.html', '/login.html']);
   const ADMIN_API = ['/api/auth', '/api/documents', '/api/groups', '/api/templates', '/api/retention', '/api/server-info', '/api/settings'];
   app.use((req, res, next) => {
-    if (!req.viaTunnel) return next();
+    if (req.fromServerPc) return next();
     // Express 경로는 대소문자를 구분하지 않고(/API/documents == /api/documents),
     // Windows 파일 시스템은 끝의 점을 무시한다(settings.html. == settings.html) → 같은 기준으로 맞춰서 비교
     const p = req.path.toLowerCase().replace(/[.\s]+$/, '');
     if (ADMIN_API.some((a) => p === a || p.startsWith(`${a}/`))) {
-      return res.status(403).json({ error: '관리자 기능은 서버를 실행한 PC에서만 사용할 수 있습니다.', code: 'admin_local_only' });
+      return res.status(403).json({ error: '관리자 기능은 서버를 실행한 PC에서만 사용할 수 있습니다. 그 PC에서 localhost 주소로 열어 주세요.', code: 'admin_local_only' });
     }
     if (ADMIN_PAGES.has(p) || p === '') return res.redirect(302, '/verify.html');
     return next();
@@ -1490,6 +1503,7 @@ if (require.main === module) {
       if (tunnel.state().status !== 'missing') console.log('  인터넷 공개 주소를 만드는 중…');
     } else if (lan) {
       for (const ip of lanAddresses()) console.log(`  같은 Wi-Fi의 휴대폰에서: http://${ip}:${port}`);
+      console.log('  관리자 화면은 이 PC에서만 열립니다. 다른 기기에서는 서명·문서 검증만 됩니다.');
     } else {
       console.log('  (이 PC에서만 접속 가능 — 휴대폰으로 서명받으려면 npm run start:lan)');
     }
