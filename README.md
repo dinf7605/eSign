@@ -135,6 +135,20 @@ npm run mail-catcher
 
 모든 데이터는 `data/` 폴더 하나에 있습니다(`db.json`, `files/`, `keys/`, `admin.json`, `settings.json`). **서버를 끄고 `data/` 폴더를 통째로 복사**하면 됩니다. 이 폴더에는 메일 비밀번호·개인키·교육생 개인정보가 있으니 안전하게 보관하세요.
 
+## 운영팀 배포용 exe
+
+```bash
+npm run build:exe
+```
+
+`dist/e서명/`(eSign.exe · cloudflared.exe · 사용법.txt)와 `dist/e서명-배포.zip`이 만들어집니다. Node.js가 없는 PC에서도 eSign.exe 더블클릭으로 실행됩니다.
+
+- 옵션 없이 실행하면 **인터넷 공개 모드**(집에서 서명)로 켜지고 관리자 화면이 브라우저로 열립니다. `--local`(이 PC만), `--lan`(같은 Wi-Fi)도 됩니다.
+- 데이터는 **exe 옆 `data\`** 폴더, 터널은 **exe 옆 `cloudflared.exe`**를 씁니다. 새 버전은 eSign.exe만 바꾸면 됩니다.
+- exe 안의 앱 파일은 처음 실행할 때 `%LOCALAPPDATA%\eSign\app\<버전>`에 한 번 풀어 씁니다(개인정보 없음).
+- Node 단일 실행 파일(`node --build-sea`, Node 25.5 이상)로 만들며, 코드 서명이 없어 처음 실행 때 Windows SmartScreen 경고가 나올 수 있습니다.
+- 운영팀 안내는 `scripts/exe/사용법.txt`에 있습니다(빌드 때 함께 들어감).
+
 ## 실행 옵션
 
 | 옵션 | 설명 |

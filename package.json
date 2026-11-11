@@ -10,7 +10,8 @@
     "test": "node --test \"test/**/*.test.js\"",
     "start:lan": "node server.js --lan",
     "start:public": "node server.js --public",
-    "mail-catcher": "node scripts/mail-catcher.js"
+    "mail-catcher": "node scripts/mail-catcher.js",
+    "build:exe": "node scripts/build-exe.js"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",

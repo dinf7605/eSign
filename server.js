@@ -1473,7 +1473,8 @@ function createApp({
   return app;
 }
 
-if (require.main === module) {
+/** 명령줄로 서버 시작 (npm start, 배포용 exe가 함께 쓴다). 만든 http 서버를 돌려준다. */
+function main() {
   const arg = (name) => (process.argv.find((a) => a.startsWith(`--${name}=`)) || '').split('=').slice(1).join('=') || null;
   const lan = process.argv.includes('--lan') || process.env.HOST === '0.0.0.0';
   const port = Number(arg('port') || process.env.PORT) || 3300;
@@ -1496,7 +1497,7 @@ if (require.main === module) {
       console.log('    winget install --id Cloudflare.cloudflared');
     }
   }
-  createApp({ lan, port, dataDir, tunnel: tunnel && tunnel.state }).listen(port, host, () => {
+  return createApp({ lan, port, dataDir, tunnel: tunnel && tunnel.state }).listen(port, host, () => {
     console.log(`전자서명 서비스 실행 중 → http://localhost:${port}`);
     if (isPublic) {
       console.log('  관리자 화면은 이 PC의 위 주소에서만 열립니다. 인터넷 주소로는 서명·문서 검증만 됩니다.');
@@ -1510,4 +1511,6 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createApp, lanAddresses, normalizePhone, normalizeName, reachability };
+if (require.main === module) main();
+
+module.exports = { createApp, main, lanAddresses, normalizePhone, normalizeName, reachability };
